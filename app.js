@@ -66,11 +66,13 @@
     const bodyPath = isSuv
       ? "M18 46 L26 24 Q30 18 40 18 L104 18 Q114 18 122 28 L136 32 Q142 34 142 42 L142 50 L18 50 Z"
       : "M16 46 L30 28 Q36 21 48 21 L98 21 Q110 21 120 31 L138 35 Q143 37 143 44 L143 50 L16 50 Z";
-    return `<svg viewBox="0 0 160 66" aria-hidden="true">
-      <path d="${bodyPath}" fill="#23201e" stroke="#f47216" stroke-width="2"/>
-      <path d="M42 24 L98 24 L112 34 L34 34 Z" fill="#f6f3ef" opacity="0.88"/>
-      <circle cx="42" cy="50" r="10" fill="#181716" stroke="#f47216" stroke-width="3"/>
-      <circle cx="118" cy="50" r="10" fill="#181716" stroke="#f47216" stroke-width="3"/>
+    return `<svg class="car-svg" viewBox="0 0 160 66" aria-hidden="true">
+      <path d="${bodyPath}" fill="#292524" stroke="#0c0a09" stroke-width="1.5"/>
+      <path d="M42 24 L98 24 L112 34 L34 34 Z" fill="#fafafa" opacity="0.92"/>
+      <circle cx="42" cy="50" r="10" fill="#0c0a09" stroke="#d6d3d1" stroke-width="2.5"/>
+      <circle cx="118" cy="50" r="10" fill="#0c0a09" stroke="#d6d3d1" stroke-width="2.5"/>
+      <circle cx="42" cy="50" r="4" fill="#a8a29e"/>
+      <circle cx="118" cy="50" r="4" fill="#a8a29e"/>
     </svg>`;
   }
 
@@ -149,32 +151,140 @@
   }
 
   function home() {
+    const defaults = {
+      pick: "BKK", drop: "CNX", type: "all",
+      start: dateInput(model.now(state) + 2 * model.day).slice(0, 10) + "T10:00",
+      end: dateInput(model.now(state) + 6 * model.day).slice(0, 10) + "T10:00"
+    };
+    const featuredCars = state.cars.filter(c => c.status === "available").slice(0, 6);
     const roles = [
-      ["customer", "01 / CUSTOMER", "ค้นหารถ จองและติดตามสถานะ ชำระเงินผ่าน QR PromptPay และลงนามสัญญาเช่าอิเล็กทรอนิกส์"],
-      ["staff", "02 / RENTAL STAFF", "ตรวจเอกสาร อนุมัติ/ปฏิเสธคำขอ จัดทำสัญญา ตรวจสภาพส่งมอบและรับคืนรถตามสาขา"],
-      ["admin", "03 / ADMIN", "จัดการยานพาหนะ ตั้งราคา/โปรโมชัน แผนและผลบำรุงรักษา บัญชีพนักงาน และรายงานวิเคราะห์"]
+      ["customer", "CUSTOMER PORTAL", "ค้นหารถ จองและติดตามสถานะ ชำระเงินผ่าน QR PromptPay และลงนามสัญญาเช่าอิเล็กทรอนิกส์"],
+      ["staff", "BRANCH STAFF", "ตรวจเอกสาร อนุมัติ/ปฏิเสธคำขอ จัดทำสัญญา ตรวจสภาพส่งมอบและรับคืนรถตามสาขา"],
+      ["admin", "SYSTEM ADMIN", "จัดการยานพาหนะ ตั้งราคา/โปรโมชัน แผนและผลบำรุงรักษา บัญชีพนักงาน และรายงานวิเคราะห์"]
     ];
-    return `<section class="hero"><div><p class="eyebrow">ITDS262 · SECTION 1 · GROUP 09</p><h1>ระบบบริหารจัดการรถเช่า</h1>
-      <p>ต้นแบบ ChaosRoad ครอบคลุม 7 สาขาทั่วประเทศ รองรับการเช่าและคืนรถต่างสาขา (One-way Rental) ครบทั้ง 6 กระบวนการตาม DFD</p>
-      <div class="hero-badges">
-        <span class="hero-badge">7 สาขา · BKK DMK SLM CNX HKT PTY KKC</span>
-        <span class="hero-badge">QR PromptPay จำลอง</span>
-        <span class="hero-badge">E-Contract &amp; วาดลายเซ็นได้จริง</span>
-        <span class="hero-badge">ตรวจสภาพรถ &amp; คำนวณค่าปรับอัตโนมัติ</span>
-      </div></div>
-      <svg class="route-map" viewBox="0 0 420 245" aria-hidden="true">
-        <path d="M20 207h112c35 0 55-26 55-58V79c0-32 21-47 50-47h147" stroke="#403934" stroke-width="39" fill="none" stroke-linecap="round"/>
-        <path d="M20 207h112c35 0 55-26 55-58V79c0-32 21-47 50-47h147" stroke="#f47216" stroke-width="3" stroke-dasharray="9 11" fill="none"/>
-        <circle cx="60" cy="207" r="9" fill="#f47216"/><circle cx="348" cy="32" r="9" fill="#f47216"/>
-        <g fill="#f3ede6" font-family="monospace" font-size="16"><text x="42" y="168">BKK</text><text x="332" y="76">CNX</text></g>
-      </svg></section>
-      <section class="grid roles" aria-label="เลือกพอร์ทัล">${roles.map(([role, code, description]) => `<article class="card">
-        <p class="eyebrow">${code}</p><h2>${roleLabels[role]}</h2><p class="muted">${description}</p>${go("เข้าสู่พอร์ทัล", "login", role, "")}</article>`).join("")}</section>
-      <div class="row roles"><p class="muted">ข้อมูลใช้ร่วมกันทุกบทบาทในเบราว์เซอร์เดียวกัน · สามารถสลับบัญชีด่วนได้ที่แถบด้านบน</p>
-      <div class="actions">
-        ${button("โหลดข้อมูลตัวอย่างครบวงจร", 'data-action="load-rich"', "secondary")}
-        ${button("รีเซ็ตข้อมูลทดลอง", 'data-action="reset"', "secondary")}
-      </div></div>`;
+    return `<div class="stack">
+      <section class="hero-editorial">
+        <div class="orb-field" aria-hidden="true">
+          <div class="orb orb-mint"></div>
+          <div class="orb orb-peach"></div>
+          <div class="orb orb-lavender"></div>
+          <div class="orb orb-sky"></div>
+        </div>
+        <div class="hero-content">
+          <div class="hero-headline-group">
+            <p class="eyebrow">CHAOSROAD MOBILITY · THAILAND</p>
+            <h1>ระบบบริหารจัดการรถเช่า</h1>
+            <p class="hero-sub">บริการเช่ารถยนต์มาตรฐานสากล รับ-คืนข้ามสาขาได้ทั่วไทย ครบทุกขั้นตอนตั้งแต่วางแผนการเดินทาง คำนวณโปรโมชันอัตโนมัติ ชำระเงินผ่าน QR PromptPay และลงนามสัญญาเช่าอิเล็กทรอนิกส์</p>
+            <div class="hero-badges">
+              <span class="hero-badge">7 สาขาสนามบินและตัวเมือง</span>
+              <span class="hero-badge">คืนรถต่างสาขาได้ทั่วประเทศ</span>
+              <span class="hero-badge">ส่วนลดอัตโนมัติสูงสุด 15%</span>
+              <span class="hero-badge">สัญญาเช่า E-Signature</span>
+            </div>
+          </div>
+          <form class="booking-search-bar" data-form="hero-search">
+            <div class="row">
+              <strong>ค้นหารถเช่าและเช็กราคาทันที</strong>
+              <small class="muted">คำนวณโปรโมชันและค่าธรรมเนียมคืนรถต่างสาขาอัตโนมัติ</small>
+            </div>
+            <div class="field-grid">
+              ${select("pick", "สาขารับรถ", branches, defaults.pick)}
+              ${select("drop", "สาขาคืนรถ", branches, defaults.drop)}
+              ${input("start", "วันเวลารับรถ", defaults.start, "datetime-local")}
+              ${input("end", "วันเวลาคืนรถ", defaults.end, "datetime-local")}
+              ${select("type", "ประเภทรถ", searchTypes, defaults.type)}
+            </div>
+            <div class="row">
+              <small class="muted">ฟรีค่าธรรมเนียมเมื่อคืนรถสาขาเดิม · ผ่อนผันเวลาคืนรถ 30 นาที</small>
+              ${submit("ค้นหารถเช่าทันที")}
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="stack">
+        <div class="section-header">
+          <div>
+            <h2>รุ่นรถยนต์ยอดนิยมพร้อมให้บริการ</h2>
+            <p class="muted">รถยนต์ทุกคันผ่านการตรวจเช็กระยะมาตรฐาน พร้อมประกันภัยและบริการช่วยเหลือฉุกเฉิน 24 ชั่วโมง</p>
+          </div>
+          ${button("ดูรถว่างทั้งหมด", 'data-action="quick-user" data-id="customer"', "secondary")}
+        </div>
+        <div class="grid">
+          ${featuredCars.map(car => `<article class="card">
+            <div class="car-visual">
+              <div class="car-visual-top"><span class="car-tag">${safe(car.type)}</span><span class="code">${safe(car.plate)}</span></div>
+              ${carSvg(car.type)}
+            </div>
+            <div>
+              <h3>${safe(car.brand + " " + car.model)}</h3>
+              <p class="muted">${safe(car.notes || "พร้อมให้บริการทันที")} · ประจำสาขา ${safe(branchName(car.branch))}</p>
+            </div>
+            <div class="spec-chips">
+              <span class="spec-chip">${safe(car.fuel)}</span>
+              <span class="spec-chip">${car.seats} ที่นั่ง</span>
+              <span class="spec-chip">สี${safe(car.color)}</span>
+              <span class="spec-chip">ปี ${car.year}</span>
+            </div>
+            <div class="row">
+              <div><small class="muted">เริ่มต้นต่อวัน</small><br><strong class="metric">${baht(car.pricing.daily)}</strong> <small class="muted">(7 วัน+ ${baht(car.pricing.weekly)}/วัน)</small></div>
+              ${button("เลือกคันนี้", `data-action="hero-book" data-id="${safe(car.id)}"`)}
+            </div>
+          </article>`).join("")}
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="gradient-orb-card">
+          <span class="code">01 · BOOK &amp; VERIFY</span>
+          <h3>จองออนไลน์และอัปโหลดเอกสาร</h3>
+          <p class="muted">เลือกรุ่นรถและสาขารับ-คืน แนบสำเนาบัตรประชาชนและใบขับขี่เพื่อให้เจ้าหน้าที่สาขาตรวจสอบและอนุมัติอย่างรวดเร็ว</p>
+        </div>
+        <div class="gradient-orb-card">
+          <span class="code">02 · PROMPTPAY &amp; E-CONTRACT</span>
+          <h3>ชำระมัดจำ QR และเซ็นสัญญา</h3>
+          <p class="muted">เมื่อได้รับอนุมัติ ระบบออกใบแจ้งหนี้ค่ามัดจำพร้อม QR PromptPay ให้ชำระภายใน 24 ชม. และลงนามสัญญาเช่าอิเล็กทรอนิกส์ได้ทันที</p>
+        </div>
+        <div class="gradient-orb-card">
+          <span class="code">03 · PICKUP &amp; ONE-WAY RETURN</span>
+          <h3>รับรถและคืนรถข้ามสาขา</h3>
+          <p class="muted">บันทึกเลขไมล์และระดับน้ำมันโปร่งใสทั้งตอนส่งมอบและรับคืน คืนรถต่างสาขาได้ทั้ง 7 จุดบริการทั่วไทย</p>
+        </div>
+      </section>
+
+      <section class="stack">
+        <div>
+          <h2>เครือข่าย 7 สาขาสนามบินและตัวเมือง</h2>
+          <p class="muted">รองรับการรับรถและคืนรถข้ามสาขาทั้งในภูมิภาคเดียวกันและข้ามภูมิภาค</p>
+        </div>
+        <div class="branch-grid">
+          ${Object.entries(model.branches).map(([code, [name, region, address]]) => {
+            const count = state.cars.filter(c => c.branch === code && c.status === "available").length;
+            return `<div class="branch-card">
+              <div class="row"><strong class="code">${safe(code)} · ${safe(name)}</strong><span class="pill available">ว่าง ${count} คัน</span></div>
+              <small class="muted">${safe(address)} (${safe(region)})</small>
+            </div>`;
+          }).join("")}
+        </div>
+      </section>
+
+      <section class="stack">
+        <div class="section-header">
+          <div>
+            <h2>เข้าใช้งานระบบตามบทบาท (Role Portals)</h2>
+            <p class="muted">สำหรับลูกค้า พนักงานประจำสาขา และผู้ดูแลระบบส่วนกลาง · ข้อมูลเชื่อมโยงกันแบบเรียลไทม์</p>
+          </div>
+          <div class="actions">
+            ${button("โหลดข้อมูลตัวอย่างครบวงจร", 'data-action="load-rich"', "secondary")}
+            ${button("รีเซ็ตข้อมูลทดลอง", 'data-action="reset"', "secondary")}
+          </div>
+        </div>
+        <div class="grid roles" aria-label="เลือกพอร์ทัล">
+          ${roles.map(([role, code, description]) => `<article class="card">
+            <p class="eyebrow">${code}</p><h2>${roleLabels[role]}</h2><p class="muted">${description}</p>${go("เข้าสู่พอร์ทัล", "login", role, "")}</article>`).join("")}
+        </div>
+      </section>
+    </div>`;
   }
 
   function login() {
@@ -263,20 +373,29 @@
     if (!search) return searchScreen();
     const car = model.getVehicle(state, selected);
     const trip = model.parseTrip(search);
-    return `${title("ส่งคำขอจอง", car.brand + " " + car.model + " · " + car.plate, "02 / BOOKING")}
-      <div class="stack">
-      ${section("ข้อมูลรถยนต์และสรุปราคา (DFD 2.2.4)", quoteDetails(model.quote(car, trip)) +
-        details([
-          ["รถยนต์ที่เลือก", `${car.brand} ${car.model} (${car.type}) · ทะเบียน ${car.plate}`],
-          ["รายละเอียดรถ", `สี${car.color} · ปี ${car.year} · ${car.fuel} · ${car.seats} ที่นั่ง · สาขาที่สังกัด ${branchName(car.branch)}`],
-          ["รับรถ", `${branchName(trip.pick)} · ${when(trip.start)}`],
-          ["คืนรถ", `${branchName(trip.drop)} · ${when(trip.end)}`]
-        ]))}
-      ${section("เอกสารยืนยันตัวตน (DFD 2.3.1)", form("request", fields(fileField("identity", "สำเนาบัตรประชาชน", false, true) +
-        fileField("licence", "สำเนาใบขับขี่", false, true)) +
-        actions(button("ใส่ไฟล์ตัวอย่าง", 'data-action="sample-files"', "secondary")) +
-        `<p class="muted">คลิก "ใส่ไฟล์ตัวอย่าง" เพื่อสร้างภาพบัตรประชาชนและใบขับขี่จำลองอัตโนมัติ หรือเลือกไฟล์จริงจากเครื่อง · ใบแจ้งหนี้ค่ามัดจำจะออกหลังสาขาตรวจสอบและอนุมัติคำขอ</p>` +
-        actions(submit("ส่งคำขอจอง"), go("กลับไปค้นหา", "search"))))}</div>`;
+    return `${title("ส่งคำขอจอง", car.brand + " " + car.model + " · " + car.plate, "ONLINE RESERVATION")}
+      <div class="checkout-layout">
+        <div class="stack">
+          ${section("เอกสารยืนยันตัวตนผู้เช่า (DFD 2.3.1)", form("request", fields(fileField("identity", "สำเนาบัตรประชาชน", false, true) +
+            fileField("licence", "สำเนาใบขับขี่", false, true)) +
+            actions(button("ใส่ไฟล์ตัวอย่าง", 'data-action="sample-files"', "secondary")) +
+            `<p class="muted">คลิก "ใส่ไฟล์ตัวอย่าง" เพื่อสร้างภาพบัตรประชาชนและใบขับขี่จำลองอัตโนมัติ หรือเลือกไฟล์จริงจากเครื่อง · ใบแจ้งหนี้ค่ามัดจำจะออกหลังสาขาตรวจสอบและอนุมัติคำขอ</p>` +
+            actions(submit("ส่งคำขอจอง"), go("กลับไปค้นหา", "search"))))}
+        </div>
+        <div class="sticky-summary stack">
+          ${section("ข้อมูลรถยนต์และสรุปราคา (DFD 2.2.4)", `<div class="car-visual">
+              <div class="car-visual-top"><span class="car-tag">${safe(car.type)}</span><span class="code">${safe(car.plate)}</span></div>
+              ${carSvg(car.type)}
+            </div>` +
+            quoteDetails(model.quote(car, trip)) +
+            details([
+              ["รถยนต์ที่เลือก", `${car.brand} ${car.model} (${car.type}) · ทะเบียน ${car.plate}`],
+              ["รายละเอียดรถ", `สี${car.color} · ปี ${car.year} · ${car.fuel} · ${car.seats} ที่นั่ง · สาขาที่สังกัด ${branchName(car.branch)}`],
+              ["รับรถ", `${branchName(trip.pick)} · ${when(trip.start)}`],
+              ["คืนรถ", `${branchName(trip.drop)} · ${when(trip.end)}`]
+            ]))}
+        </div>
+      </div>`;
   }
 
   function bookingRows(bookings, history = false) {
@@ -936,12 +1055,21 @@
       } else {
         if (!permitted[actor.role].includes(view)) throw new Error("หน้านี้อยู่นอกสิทธิ์ของบัญชี");
         const parent = typeof parentView[view] === "function" ? parentView[view](actor.role) : parentView[view] || view;
-        const branchBox = actor.branch
-          ? `<div class="branch-box">สาขาที่สังกัด<strong>${safe(branchName(actor.branch))}</strong>${safe(model.branches[actor.branch]?.[2] || "")}</div>`
-          : `<div class="branch-box">บัญชีที่ใช้งาน<strong>${safe(actor.name)}</strong>@${safe(actor.username)}</div>`;
-        main.innerHTML = `<div class="shell"><nav class="sidebar" aria-label="เมนูพอร์ทัล"><p class="eyebrow">${safe(actor.role)}</p>${branchBox}
-          ${navigation[actor.role].map(([screen, label]) => `<button type="button" data-go="${screen}" ${screen === parent ? 'aria-current="page"' : ""}>${label}</button>`).join("")}
-          </nav><div>${screens[view]()}</div></div>`;
+        if (actor.role === "customer") {
+          main.innerHTML = `<nav class="customer-subnav" aria-label="เมนูพอร์ทัล">
+            <div class="subnav-pills">
+              ${navigation.customer.map(([screen, label]) => `<button type="button" data-go="${screen}" ${screen === parent ? 'aria-current="page"' : ""}>${label}</button>`).join("")}
+            </div>
+            <span class="muted">ผู้เช่า: <strong>${safe(actor.name)}</strong> (@${safe(actor.username)})</span>
+          </nav><div>${screens[view]()}</div>`;
+        } else {
+          const branchBox = actor.branch
+            ? `<div class="branch-box">สาขาที่สังกัด<strong>${safe(branchName(actor.branch))}</strong>${safe(model.branches[actor.branch]?.[2] || "")}</div>`
+            : `<div class="branch-box">บัญชีที่ใช้งาน<strong>${safe(actor.name)}</strong>@${safe(actor.username)}</div>`;
+          main.innerHTML = `<div class="shell"><nav class="sidebar" aria-label="เมนูพอร์ทัล"><p class="eyebrow">${safe(actor.role)}</p>${branchBox}
+            ${navigation[actor.role].map(([screen, label]) => `<button type="button" data-go="${screen}" ${screen === parent ? 'aria-current="page"' : ""}>${label}</button>`).join("")}
+            </nav><div>${screens[view]()}</div></div>`;
+        }
       }
       hydrateInlineDocs();
       setupSignaturePad();
@@ -1058,6 +1186,23 @@
             setActor(targetUser, true);
             notify(`สลับไปยังบัญชี ${targetUser.name} (${roleLabels[targetUser.role]}) แล้ว`);
           }
+          break;
+        }
+        case "hero-book": {
+          const car = model.getVehicle(state, id);
+          if (!actor || actor.role !== "customer") {
+            const cust = state.users.find(u => u.role === "customer");
+            username = cust.username;
+            sessionStorage.setItem("chaosroad.user", username);
+          }
+          search = {
+            pick: car.branch,
+            drop: car.branch,
+            type: car.type,
+            start: dateInput(model.now(state) + 2 * model.day).slice(0, 10) + "T10:00",
+            end: dateInput(model.now(state) + 6 * model.day).slice(0, 10) + "T10:00"
+          };
+          navigate("request", car.id);
           break;
         }
         case "fill-login": {
@@ -1196,9 +1341,15 @@
           setActor(model.register(data));
           notify("สร้างบัญชีลูกค้าแล้ว");
           return;
+        case "hero-search":
         case "search": {
           const trip = model.parseTrip(data);
           if (trip.start <= model.now(state)) throw new Error("เลือกรับรถหลังเวลาจำลองปัจจุบัน");
+          if (!actor || actor.role !== "customer") {
+            const cust = state.users.find(u => u.role === "customer");
+            username = cust.username;
+            sessionStorage.setItem("chaosroad.user", username);
+          }
           search = data;
           navigate("search");
           return;

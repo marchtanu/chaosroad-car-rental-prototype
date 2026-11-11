@@ -3,23 +3,60 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#1b1a19">
-  <title>ChaosRoad · Group 9 Prototype</title>
+  <meta name="theme-color" content="#f5f5f5">
+  <title>ChaosRoad — บริการเช่ารถยนต์และระบบบริหารจัดการรถเช่า</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@300;400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <script src="model.js" defer></script>
   <script src="qr.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
-  <a class="skip" href="#main">ข้ามไปยังเนื้อหา</a>
+  <a class="skip" href="#main">ข้ามไปยังเนื้อหาหลัก</a>
   <header class="topbar">
     <div class="top-inner">
-      <button type="button" class="brand" data-go="home"><span class="mark">CR</span>ChaosRoad</button>
+      <div class="brand-cluster">
+        <button type="button" class="brand" data-go="home">
+          <span class="mark">II</span>
+          <span class="brand-wordmark">ChaosRoad</span>
+        </button>
+      </div>
       <div id="session" class="session"></div>
     </div>
   </header>
   <div id="notice" class="notice" role="status" aria-live="polite"></div>
   <main id="main" tabindex="-1"></main>
-  <footer class="footer"><span>ITDS262 · SECTION 1 · GROUP 9</span><span>ต้นแบบสำหรับสาธิต · ใช้ข้อมูลสมมติเท่านั้น</span></footer>
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo"><span class="mark">II</span> <strong>ChaosRoad Mobility</strong></div>
+        <p class="muted">บริการเช่ารถยนต์มาตรฐานสากล รับ-คืนข้ามสาขาได้ทั่วไทย พร้อมระบบสัญญาเช่าอิเล็กทรอนิกส์และชำระเงินผ่าน QR PromptPay</p>
+      </div>
+      <div class="footer-cols">
+        <div>
+          <h4>บริการเช่ารถ</h4>
+          <ul>
+            <li><button type="button" class="footer-link" data-action="quick-user" data-id="customer">ค้นหารถเช่า</button></li>
+            <li><button type="button" class="footer-link" data-go="home">สาขาที่ให้บริการ (7 สาขา)</button></li>
+            <li><button type="button" class="footer-link" data-go="register">สมัครสมาชิกใหม่</button></li>
+          </ul>
+        </div>
+        <div>
+          <h4>สำหรับเจ้าหน้าที่</h4>
+          <ul>
+            <li><button type="button" class="footer-link" data-action="quick-user" data-id="staff.bkk">พอร์ทัลสาขาสุวรรณภูมิ (BKK)</button></li>
+            <li><button type="button" class="footer-link" data-action="quick-user" data-id="staff.cnx">พอร์ทัลสาขาเชียงใหม่ (CNX)</button></li>
+            <li><button type="button" class="footer-link" data-action="quick-user" data-id="admin">ระบบผู้ดูแลกลาง (Admin)</button></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 ChaosRoad Mobility Thailand · ITDS262 Section 1 Group 9</span>
+      <span>ElevenLabs Editorial Design System · ข้อมูลจำลองเพื่อการสาธิต</span>
+    </div>
+  </footer>
 </body>
 </html>
