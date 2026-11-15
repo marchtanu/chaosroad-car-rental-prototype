@@ -634,3 +634,7 @@ const ChaosRoad = (() => {
     loadRichDemo() { save(seedRichDemo()); }
   };
 })();
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = ChaosRoad;
+}

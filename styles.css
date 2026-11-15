@@ -488,6 +488,10 @@ h3 {
   align-items: start;
 }
 
+.shell-content {
+  min-width: 0;
+}
+
 .sidebar {
   position: sticky;
   top: 84px;
@@ -834,6 +838,33 @@ h3 {
   align-items: center;
 }
 
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+
+.toolbar-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.toolbar-form .field {
+  min-width: 220px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .btn {
   min-height: 40px;
   padding: 9px 20px;
@@ -955,12 +986,19 @@ h3 {
 dl {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px 16px;
+  gap: 12px 18px;
   margin: 0;
   padding: 16px;
   border-radius: var(--rounded-lg);
   background: var(--canvas-soft);
   border: 1px solid var(--hairline);
+}
+
+.detail-item {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  min-width: 0;
 }
 
 dt {
@@ -969,7 +1007,7 @@ dt {
 }
 
 dd {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 14px;
   font-weight: 500;
   color: var(--ink);

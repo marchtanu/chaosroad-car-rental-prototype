@@ -1,0 +1,2062 @@
+"use strict";
+
+const ChaosRoadScreens = ((model, ui) => {
+  const {
+    roleLabels,
+    statusLabels,
+    invoiceLabels,
+    safe,
+    branchName,
+    baht,
+    when,
+    dateInput,
+    branches,
+    types,
+    searchTypes,
+    statuses,
+    badge,
+    hidden,
+    input,
+    select,
+    notes,
+    checkbox,
+    fileField,
+    button,
+    go,
+    submit,
+    title,
+    section,
+    kpiStrip,
+    form,
+    fields,
+    actions,
+    toolbar,
+    empty,
+    details,
+    table,
+    carSvg,
+    fuelGaugeWidget,
+    syntheticDocDataUrl,
+  } = ui;
+
+  function findBookingForView(ctx) {
+    const booking = ctx.state.bookings.find((item) => item.id === ctx.selected);
+    const { actor, username } = ctx;
+    const allowed =
+      booking &&
+      (actor.role === "customer"
+        ? booking.owner === username
+        : actor.role === "staff" &&
+          (booking.pick === actor.branch ||
+            (booking.drop === actor.branch &&
+              ["renting", "completed"].includes(booking.status))));
+    if (!allowed) throw new Error("การจองนี้อยู่นอกสิทธิ์ของบัญชี");
+    return booking;
+  }
+
+  function quoteDetails(quote) {
+    const remaining = Math.max(0, quote.total - quote.deposit);
+    return details([
+      ["ระยะเวลาเช่า", `${quote.days} วัน`],
+      ["อัตราที่ใช้ต่อวัน", baht(quote.rate)],
+      ["ค่าเช่าก่อนส่วนลด", baht(quote.base)],
+      [
+        "โปรโมชันอัตโนมัติ",
+        quote.discount
+          ? `${quote.promotion} · −${baht(quote.discount)}`
+          : "ไม่มีส่วนลดที่เข้าเงื่อนไข",
+      ],
+      [
+        "ค่าธรรมเนียมคืนต่างสาขา",
+        quote.oneWay
+          ? `${baht(quote.oneWay)} (One-way)`
+          : `${baht(0)} (สาขาเดียวกัน)`,
+      ],
+      ["ค่าเช่ารวมโดยประมาณ", baht(quote.total)],
+      ["ค่ามัดจำ (ชำระหลังอนุมัติ)", baht(quote.deposit)],
+      ["ค่าเช่าส่วนที่เหลือ (ชำระตอนรับรถ)", baht(remaining)],
+    ]);
+  }
+
+  function routeDetails(state, booking) {
+    const depInv = state.invoices.find(
+      (item) => item.bookingId === booking.id && item.kind === "deposit",
+    );
+    const payState = depInv
+      ? statusLabels[depInv.status]
+      : "ยังไม่ออกใบแจ้งหนี้";
+    return details([
+      ["ทะเบียนรถ", `${booking.plate} · ${booking.vehicle} (${booking.type})`],
+      ["รับรถ", `${branchName(booking.pick)} · ${when(booking.start)}`],
+      ["คืนรถ", `${branchName(booking.drop)} · ${when(booking.end)}`],
+      ["ค่าเช่ารวม", baht(booking.quote.total)],
+      ["ค่าคืนต่างสาขา (รวมแล้ว)", baht(booking.quote.oneWay)],
+      [
+        "ส่วนลดโปรโมชัน",
+        booking.quote.discount
+          ? `−${baht(booking.quote.discount)} (${booking.quote.promotion})`
+          : baht(0),
+      ],
+      ["ค่ามัดจำ", `${baht(booking.quote.deposit)} (${payState})`],
+    ]);
+  }
+
+  function bookingRows(bookings, history = false) {
+    if (!bookings.length) {
+      return empty(
+        history ? "ยังไม่มีการเช่าที่เสร็จสิ้น" : "ยังไม่มีการจองในรายการนี้",
+      );
+    }
+    return table(
+      ["Booking ID / รถ", "รับ → คืน", "ยอดรวม / มัดจำ", "สถานะ", "เปิด"],
+      bookings.map((booking) => [
+        `<strong class="code">${safe(booking.id)}</strong><br>${safe(booking.vehicle)} · <small>${safe(booking.plate)}</small>`,
+        `${safe(booking.pick)} → ${safe(booking.drop)}<br><small>${when(booking.start)} → ${when(booking.end)}</small>`,
+        `<strong>${baht(booking.quote.total)}</strong><br><small>มัดจำ ${baht(booking.quote.deposit)}</small>`,
+        badge(booking.status),
+        go("ดู " + booking.id, "booking", booking.id),
+      ]),
+    );
+  }
+
+  function attachmentLink(label, attachment) {
+    if (!attachment) return "";
+    return button(
+      `${label} · ${attachment.name} (${Math.ceil(attachment.size / 1024)} KB)`,
+      `data-action="download" data-id="${safe(attachment.key)}" data-filename="${safe(attachment.name)}"`,
+      "secondary",
+    );
+  }
+
+  function inspectionSummary(label, inspection) {
+    return `<div class="compare-box stack"><h3>${safe(label)}</h3>${details([
+      ["วันเวลาจริง", when(inspection.recordedAt)],
+      ["เลขไมล์", `${inspection.odometer.toLocaleString()} กม.`],
+      [
+        "น้ำมัน",
+        `${inspection.fuel}% (${Math.round(inspection.fuel / 12.5)}/8 ถัง)`,
+      ],
+      ["หมายเหตุ", inspection.notes || "—"],
+    ])}${attachmentLink("ภาพตรวจสภาพ", inspection.photo)}</div>`;
+  }
+
+  function chargeDetails(charges) {
+    return details([
+      ["ค่าคืนช้า", `${charges.lateHours} ชม. · ${baht(charges.late)}`],
+      ["ค่าน้ำมันขาด", baht(charges.fuel)],
+      ["ค่าความเสียหาย", baht(charges.damage)],
+      ["รวมค่าบริการเพิ่มเติม", baht(charges.total)],
+    ]);
+  }
+
+  // --- Public & Auth Screens ---
+
+  function home(ctx) {
+    const { state } = ctx;
+    const defaults = {
+      pick: "BKK",
+      drop: "CNX",
+      type: "all",
+      start:
+        dateInput(model.now(state) + 2 * model.day).slice(0, 10) + "T10:00",
+      end: dateInput(model.now(state) + 6 * model.day).slice(0, 10) + "T10:00",
+    };
+    const featuredCars = state.cars
+      .filter((c) => c.status === "available")
+      .slice(0, 6);
+    const roles = [
+      [
+        "customer",
+        "CUSTOMER PORTAL",
+        "ค้นหารถ จองและติดตามสถานะ ชำระเงินผ่าน QR PromptPay และลงนามสัญญาเช่าอิเล็กทรอนิกส์",
+      ],
+      [
+        "staff",
+        "BRANCH STAFF",
+        "ตรวจเอกสาร อนุมัติ/ปฏิเสธคำขอ จัดทำสัญญา ตรวจสภาพส่งมอบและรับคืนรถตามสาขา",
+      ],
+      [
+        "admin",
+        "SYSTEM ADMIN",
+        "จัดการยานพาหนะ ตั้งราคา/โปรโมชัน แผนและผลบำรุงรักษา บัญชีพนักงาน และรายงานวิเคราะห์",
+      ],
+    ];
+    return `<div class="stack">
+      <section class="hero-editorial">
+        <div class="orb-field" aria-hidden="true">
+          <div class="orb orb-mint"></div>
+          <div class="orb orb-peach"></div>
+          <div class="orb orb-lavender"></div>
+          <div class="orb orb-sky"></div>
+        </div>
+        <div class="hero-content">
+          <div class="hero-headline-group">
+            <p class="eyebrow">CHAOSROAD MOBILITY · THAILAND</p>
+            <h1>ระบบบริหารจัดการรถเช่า</h1>
+            <p class="hero-sub">บริการเช่ารถยนต์มาตรฐานสากล รับ-คืนข้ามสาขาได้ทั่วไทย ครบทุกขั้นตอนตั้งแต่วางแผนการเดินทาง คำนวณโปรโมชันอัตโนมัติ ชำระเงินผ่าน QR PromptPay และลงนามสัญญาเช่าอิเล็กทรอนิกส์</p>
+            <div class="hero-badges">
+              <span class="hero-badge">7 สาขาสนามบินและตัวเมือง</span>
+              <span class="hero-badge">คืนรถต่างสาขาได้ทั่วประเทศ</span>
+              <span class="hero-badge">ส่วนลดอัตโนมัติสูงสุด 15%</span>
+              <span class="hero-badge">สัญญาเช่า E-Signature</span>
+            </div>
+          </div>
+          <form class="booking-search-bar" data-form="hero-search">
+            <div class="row">
+              <strong>ค้นหารถเช่าและเช็กราคาทันที</strong>
+              <small class="muted">คำนวณโปรโมชันและค่าธรรมเนียมคืนรถต่างสาขาอัตโนมัติ</small>
+            </div>
+            <div class="field-grid">
+              ${select("pick", "สาขารับรถ", branches, defaults.pick)}
+              ${select("drop", "สาขาคืนรถ", branches, defaults.drop)}
+              ${input("start", "วันเวลารับรถ", defaults.start, "datetime-local")}
+              ${input("end", "วันเวลาคืนรถ", defaults.end, "datetime-local")}
+              ${select("type", "ประเภทรถ", searchTypes, defaults.type)}
+            </div>
+            <div class="row">
+              <small class="muted">ฟรีค่าธรรมเนียมเมื่อคืนรถสาขาเดิม · ผ่อนผันเวลาคืนรถ 30 นาที</small>
+              ${submit("ค้นหารถเช่าทันที")}
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel stack">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">EVALUATION GUIDE</p>
+            <h2>วิธีทดลองใช้งานระบบ (สำหรับผู้ประเมิน / อาจารย์ผู้ตรวจ)</h2>
+            <p class="muted">ไม่ต้องติดตั้งหรือรันเซิร์ฟเวอร์ — สามารถทดลองใช้งานได้ 2 วิธีทันที</p>
+          </div>
+          <div class="actions">
+            ${button("โหลดข้อมูลตัวอย่างครบวงจร", 'data-action="load-rich"', "")}
+            ${button("รีเซ็ตข้อมูลทดลอง", 'data-action="reset"', "secondary")}
+          </div>
+        </div>
+        <div class="grid">
+          <div class="callout stack">
+            <strong>วิธีที่ 1 · สำรวจข้อมูลสำเร็จรูปทันที</strong>
+            <p class="muted">คลิก <b>"โหลดข้อมูลตัวอย่างครบวงจร"</b> แล้วใช้แถบสลับบทบาทด้านบนสุด (<code>ลูกค้า</code> · <code>พนง. BKK</code> · <code>พนง. CNX</code> · <code>Admin</code>) เพื่อดูรายการจอง สัญญา รายงานรายได้ และแผนซ่อมบำรุงได้ทันที</p>
+          </div>
+          <div class="callout stack">
+            <strong>วิธีที่ 2 · ทดสอบ Flow การเช่าตั้งแต่ต้นจนจบ</strong>
+            <p class="muted">1) ใช้แบบฟอร์มค้นหารถด้านบนเลือกจองรถ → 2) กด <code>ใส่ไฟล์ตัวอย่าง</code> และส่งคำขอ → 3) สลับเป็น <code>พนง. BKK</code> อนุมัติ → 4) สลับเป็น <code>ลูกค้า</code> ชำระมัดจำ QR → 5) ลงนามสัญญาทั้ง 2 ฝ่าย → 6) <code>พนง. BKK</code> ส่งมอบ → 7) <code>พนง. CNX</code> รับคืนรถ</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="stack">
+        <div class="section-header">
+          <div>
+            <h2>รุ่นรถยนต์ยอดนิยมพร้อมให้บริการ</h2>
+            <p class="muted">รถยนต์ทุกคันผ่านการตรวจเช็กระยะมาตรฐาน พร้อมประกันภัยและบริการช่วยเหลือฉุกเฉิน 24 ชั่วโมง</p>
+          </div>
+          ${button("ดูรถว่างทั้งหมด", 'data-action="quick-user" data-id="customer"', "secondary")}
+        </div>
+        <div class="grid">
+          ${featuredCars
+            .map(
+              (car) => `<article class="card">
+            <div class="car-visual">
+              <div class="car-visual-top"><span class="car-tag">${safe(car.type)}</span><span class="code">${safe(car.plate)}</span></div>
+              ${carSvg(car.type)}
+            </div>
+            <div>
+              <h3>${safe(car.brand + " " + car.model)}</h3>
+              <p class="muted">${safe(car.notes || "พร้อมให้บริการทันที")} · ประจำสาขา ${safe(branchName(car.branch))}</p>
+            </div>
+            <div class="spec-chips">
+              <span class="spec-chip">${safe(car.fuel)}</span>
+              <span class="spec-chip">${car.seats} ที่นั่ง</span>
+              <span class="spec-chip">สี${safe(car.color)}</span>
+              <span class="spec-chip">ปี ${car.year}</span>
+            </div>
+            <div class="row">
+              <div><small class="muted">เริ่มต้นต่อวัน</small><br><strong class="metric">${baht(car.pricing.daily)}</strong> <small class="muted">(7 วัน+ ${baht(car.pricing.weekly)}/วัน)</small></div>
+              ${button("เลือกคันนี้", `data-action="hero-book" data-id="${safe(car.id)}"`)}
+            </div>
+          </article>`,
+            )
+            .join("")}
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="gradient-orb-card">
+          <span class="code">01 · BOOK &amp; VERIFY</span>
+          <h3>จองออนไลน์และอัปโหลดเอกสาร</h3>
+          <p class="muted">เลือกรุ่นรถและสาขารับ-คืน แนบสำเนาบัตรประชาชนและใบขับขี่เพื่อให้เจ้าหน้าที่สาขาตรวจสอบและอนุมัติอย่างรวดเร็ว</p>
+        </div>
+        <div class="gradient-orb-card">
+          <span class="code">02 · PROMPTPAY &amp; E-CONTRACT</span>
+          <h3>ชำระมัดจำ QR และเซ็นสัญญา</h3>
+          <p class="muted">เมื่อได้รับอนุมัติ ระบบออกใบแจ้งหนี้ค่ามัดจำพร้อม QR PromptPay ให้ชำระภายใน 24 ชม. และลงนามสัญญาเช่าอิเล็กทรอนิกส์ได้ทันที</p>
+        </div>
+        <div class="gradient-orb-card">
+          <span class="code">03 · PICKUP &amp; ONE-WAY RETURN</span>
+          <h3>รับรถและคืนรถข้ามสาขา</h3>
+          <p class="muted">บันทึกเลขไมล์และระดับน้ำมันโปร่งใสทั้งตอนส่งมอบและรับคืน คืนรถต่างสาขาได้ทั้ง 7 จุดบริการทั่วไทย</p>
+        </div>
+      </section>
+
+      <section class="stack">
+        <div>
+          <h2>เครือข่าย 7 สาขาสนามบินและตัวเมือง</h2>
+          <p class="muted">รองรับการรับรถและคืนรถข้ามสาขาทั้งในภูมิภาคเดียวกันและข้ามภูมิภาค</p>
+        </div>
+        <div class="branch-grid">
+          ${Object.entries(model.branches)
+            .map(([code, [name, region, address]]) => {
+              const count = state.cars.filter(
+                (c) => c.branch === code && c.status === "available",
+              ).length;
+              return `<div class="branch-card">
+              <div class="row"><strong class="code">${safe(code)} · ${safe(name)}</strong><span class="pill available">ว่าง ${count} คัน</span></div>
+              <small class="muted">${safe(address)} (${safe(region)})</small>
+            </div>`;
+            })
+            .join("")}
+        </div>
+      </section>
+
+      <section class="stack">
+        <div class="section-header">
+          <div>
+            <h2>เข้าใช้งานระบบตามบทบาท (Role Portals)</h2>
+            <p class="muted">สำหรับลูกค้า พนักงานประจำสาขา และผู้ดูแลระบบส่วนกลาง · ข้อมูลเชื่อมโยงกันแบบเรียลไทม์</p>
+          </div>
+          <div class="actions">
+            ${button("โหลดข้อมูลตัวอย่างครบวงจร", 'data-action="load-rich"', "secondary")}
+            ${button("รีเซ็ตข้อมูลทดลอง", 'data-action="reset"', "secondary")}
+          </div>
+        </div>
+        <div class="grid roles" aria-label="เลือกพอร์ทัล">
+          ${roles
+            .map(
+              ([role, code, description]) => `<article class="card">
+            <p class="eyebrow">${code}</p><h2>${roleLabels[role]}</h2><p class="muted">${description}</p>${go("เข้าสู่พอร์ทัล", "login", role, "")}</article>`,
+            )
+            .join("")}
+        </div>
+      </section>
+    </div>`;
+  }
+
+  function login(ctx) {
+    const { state, loginRole } = ctx;
+    const users = {
+      customer: ["customer", "somchai.j"],
+      staff: ["staff.bkk", "staff.cnx"],
+      admin: ["admin"],
+    };
+    const availableUsers = users[loginRole].filter((u) =>
+      state.users.some((item) => item.username === u),
+    );
+    return `<div class="narrow">${title("เข้าสู่ระบบ " + roleLabels[loginRole], "ใช้บัญชีตัวอย่างเพื่อเดิน flow ของแต่ละบทบาท หรือคลิกปุ่มลัดด้านล่าง", "DEMO SIGN-IN")}
+      ${section(
+        "Username และรหัสผ่าน",
+        form(
+          "login",
+          fields(
+            input(
+              "username",
+              "Username",
+              "",
+              "text",
+              'required autocomplete="username"',
+            ) +
+              input(
+                "password",
+                "รหัสผ่านทดลอง",
+                "",
+                "password",
+                'required autocomplete="current-password"',
+              ),
+          ) +
+            actions(
+              submit("เข้าสู่ระบบ") +
+                (loginRole === "customer"
+                  ? go("สมัครสมาชิก", "register")
+                  : "") +
+                go("กลับหน้าหลัก", "home"),
+            ),
+        ) +
+          `<div class="callout stack"><p>คลิกชื่อบัญชีเพื่อกรอกอัตโนมัติ · รหัสผ่าน <strong>${safe(model.demoPassword)}</strong></p>${actions(
+            (availableUsers.length
+              ? availableUsers
+              : users[loginRole].slice(0, 2)
+            )
+              .map((user) =>
+                button(
+                  user,
+                  `data-action="fill-login" data-id="${user}"`,
+                  "secondary",
+                ),
+              )
+              .join(""),
+          )}</div>`,
+      )}
+      </div>`;
+  }
+
+  function accountFields(user) {
+    return fields(
+      input("name", "ชื่อ-นามสกุล", user?.name) +
+        input("email", "อีเมล", user?.email, "email") +
+        input("phone", "เบอร์โทรศัพท์", user?.phone, "tel") +
+        input("username", "Username", user?.username) +
+        input(
+          "password",
+          user ? "รหัสผ่านใหม่ (เว้นว่างเพื่อใช้เดิม)" : "รหัสผ่านทดลอง",
+          "",
+          "password",
+          (user ? "" : "required ") +
+            'minlength="8" autocomplete="new-password"',
+        ),
+    );
+  }
+
+  function registration() {
+    return `<div class="narrow">${title("สมัครบัญชีลูกค้า", "สร้างบัญชีใหม่เพื่อค้นหารถ จอง ชำระเงิน และเซ็นสัญญาออนไลน์ (DFD 1.1)", "CUSTOMER ACCOUNT")}
+      ${section(
+        "ข้อมูลบัญชีลูกค้า",
+        form(
+          "register",
+          accountFields() +
+            input(
+              "confirm",
+              "ยืนยันรหัสผ่านทดลอง",
+              "",
+              "password",
+              'required minlength="8" autocomplete="new-password"',
+            ) +
+            actions(
+              submit("สร้างบัญชี") +
+                go("กลับหน้าเข้าสู่ระบบ", "login", "customer"),
+            ),
+        ),
+      )}</div>`;
+  }
+
+  // --- Customer Screens ---
+
+  function searchScreen(ctx) {
+    const { state, search } = ctx;
+    const defaults = {
+      pick: "BKK",
+      drop: "CNX",
+      type: "all",
+      start:
+        dateInput(model.now(state) + 2 * model.day).slice(0, 10) + "T10:00",
+      end: dateInput(model.now(state) + 6 * model.day).slice(0, 10) + "T10:00",
+    };
+    const draft = search || defaults;
+    const trip = search && model.parseTrip(search);
+    const cars = trip
+      ? state.cars.filter((car) => model.available(state, car, trip))
+      : [];
+    const typePills = [["all", "ทุกประเภทรถ"], ...types]
+      .map(
+        ([val, label]) =>
+          `<button type="button" class="chip ${draft.type === val ? "active" : ""}" data-action="pick-type" data-id="${safe(val)}">${safe(label)}</button>`,
+      )
+      .join("");
+    return `${title("ค้นหารถ", "เลือกสาขารับ-คืนรถ วันเวลา และประเภทรถ ระบบคำนวณโปรโมชันและค่าธรรมเนียมต่างสาขาให้อัตโนมัติ (DFD 2.1–2.2)", "02 / BOOKING")}
+      <div class="stack">${section(
+        "รายละเอียดการเดินทาง",
+        form(
+          "search",
+          fields(
+            select("pick", "สาขารับรถ", branches, draft.pick) +
+              select("drop", "สาขาคืนรถ", branches, draft.drop) +
+              input("start", "วันเวลารับรถ", draft.start, "datetime-local") +
+              input("end", "วันเวลาคืนรถ", draft.end, "datetime-local") +
+              select("type", "ประเภทรถ", searchTypes, draft.type),
+          ) +
+            `<div class="chip-bar"><small class="muted">เลือกประเภทรถด่วน:</small>${typePills}</div>` +
+            actions(submit("ค้นหารถที่ว่าง")),
+        ),
+      )}
+      ${
+        trip
+          ? `<section class="stack"><h2>รถที่ว่าง (${cars.length})</h2>${
+              cars.length
+                ? `<div class="grid">${cars
+                    .map((car) => {
+                      const quote = model.quote(car, trip);
+                      return `<article class="card">
+          <div class="car-visual">
+            <div class="car-visual-top"><span class="car-tag">${safe(car.type)}</span><span class="code">${safe(car.plate)}</span></div>
+            ${carSvg(car.type)}
+          </div>
+          <p class="eyebrow">${safe(car.type)} / ${safe(car.plate)}</p>
+          <h3>${safe(car.brand + " " + car.model)}</h3>
+          <div class="spec-chips">
+            <span class="spec-chip">สี${safe(car.color)}</span>
+            <span class="spec-chip">${safe(car.fuel)}</span>
+            <span class="spec-chip">${car.seats} ที่นั่ง</span>
+            <span class="spec-chip">ปี ${car.year}</span>
+            <span class="spec-chip">${branchName(car.branch)}</span>
+          </div>
+          <p class="muted">${safe(car.notes || "พร้อมให้บริการทันที")} · ${baht(car.pricing.daily)}/วัน (7 วัน+ ${baht(car.pricing.weekly)}/วัน)</p>
+          <div class="row"><div><small class="muted">ค่าเช่ารวมสุทธิ (${quote.days} วัน)</small><br><strong class="metric">${baht(quote.total)}</strong></div>
+            <small class="muted">มัดจำ ${baht(quote.deposit)}</small></div>
+          ${go("ดูราคาและจอง", "request", car.id, "")}</article>`;
+                    })
+                    .join("")}</div>`
+                : empty(
+                    "ไม่พบรถว่างสำหรับเงื่อนไขนี้ ลองเลือก 'ทุกประเภทรถ' หรือเปลี่ยนสาขา/วันเวลา",
+                  )
+            }</section>`
+          : ""
+      }</div>`;
+  }
+
+  function requestScreen(ctx) {
+    const { state, search, selected } = ctx;
+    if (!search) return searchScreen(ctx);
+    const car = model.getVehicle(state, selected);
+    const trip = model.parseTrip(search);
+    return `${title("ส่งคำขอจอง", car.brand + " " + car.model + " · " + car.plate, "ONLINE RESERVATION")}
+      <div class="checkout-layout">
+        <div class="stack">
+          ${section(
+            "เอกสารยืนยันตัวตนผู้เช่า (DFD 2.3.1)",
+            form(
+              "request",
+              fields(
+                fileField("identity", "สำเนาบัตรประชาชน", false, true) +
+                  fileField("licence", "สำเนาใบขับขี่", false, true),
+              ) +
+                actions(
+                  button(
+                    "ใส่ไฟล์ตัวอย่าง",
+                    'data-action="sample-files"',
+                    "secondary",
+                  ),
+                ) +
+                `<p class="muted">คลิก "ใส่ไฟล์ตัวอย่าง" เพื่อสร้างภาพบัตรประชาชนและใบขับขี่จำลองอัตโนมัติ หรือเลือกไฟล์จริงจากเครื่อง · ใบแจ้งหนี้ค่ามัดจำจะออกหลังสาขาตรวจสอบและอนุมัติคำขอ</p>` +
+                actions(submit("ส่งคำขอจอง") + go("กลับไปค้นหา", "search")),
+            ),
+          )}
+        </div>
+        <div class="sticky-summary stack">
+          ${section(
+            "ข้อมูลรถยนต์และสรุปราคา (DFD 2.2.4)",
+            `<div class="car-visual">
+              <div class="car-visual-top"><span class="car-tag">${safe(car.type)}</span><span class="code">${safe(car.plate)}</span></div>
+              ${carSvg(car.type)}
+            </div>` +
+              quoteDetails(model.quote(car, trip)) +
+              details([
+                [
+                  "รถยนต์ที่เลือก",
+                  `${car.brand} ${car.model} (${car.type}) · ทะเบียน ${car.plate}`,
+                ],
+                [
+                  "รายละเอียดรถ",
+                  `สี${car.color} · ปี ${car.year} · ${car.fuel} · ${car.seats} ที่นั่ง · สาขาที่สังกัด ${branchName(car.branch)}`,
+                ],
+                ["รับรถ", `${branchName(trip.pick)} · ${when(trip.start)}`],
+                ["คืนรถ", `${branchName(trip.drop)} · ${when(trip.end)}`],
+              ]),
+          )}
+        </div>
+      </div>`;
+  }
+
+  function customerBookings(ctx, history) {
+    const { state, username } = ctx;
+    const allOwned = state.bookings.filter((item) => item.owner === username);
+    const bookings = allOwned
+      .filter((item) => !history || item.status === "completed")
+      .reverse();
+    const completedCount = allOwned.filter(
+      (item) => item.status === "completed",
+    ).length;
+    const activeCount = allOwned.filter((item) =>
+      ["pending", "approved", "renting"].includes(item.status),
+    ).length;
+    return (
+      title(
+        history ? "ประวัติการเช่า" : "การจองของฉัน",
+        "เลือก Booking ID เพื่อดูสถานะ ชำระใบแจ้งหนี้ เซ็นสัญญา หรือแก้ไข/ยกเลิกการจอง (DFD 2.6–2.7)",
+        "CUSTOMER",
+      ) +
+      `<div class="stack">${kpiStrip([
+        { label: "รายการจองทั้งหมด", value: allOwned.length },
+        { label: "กำลังดำเนินการ", value: activeCount },
+        { label: "เช่าเสร็จสิ้นแล้ว", value: completedCount },
+      ])}${section("รายการจอง", bookingRows(bookings, history))}</div>`
+    );
+  }
+
+  function invoiceScreen(ctx) {
+    const { state, actor, username, selected, demoQr } = ctx;
+    const item = state.invoices.find((invoice) => invoice.id === selected);
+    const booking = state.bookings.find(
+      (record) => record.id === item?.bookingId && record.owner === username,
+    );
+    if (!item || !booking || actor.role !== "customer") {
+      throw new Error("ไม่พบใบแจ้งหนี้ในบัญชีนี้");
+    }
+    const pending = item.status === "unpaid";
+    const depAmount =
+      state.invoices.find(
+        (inv) => inv.bookingId === booking.id && inv.kind === "deposit",
+      )?.amount || 0;
+    const balanceBreakdown =
+      item.kind === "balance"
+        ? details([
+            [
+              "ค่าเช่าก่อนส่วนลด (" + booking.quote.days + " วัน)",
+              baht(booking.quote.base),
+            ],
+            ["ค่าธรรมเนียมคืนรถต่างสาขา", baht(booking.quote.oneWay)],
+            [
+              "ส่วนลดโปรโมชัน",
+              booking.quote.discount
+                ? `−${baht(booking.quote.discount)} (${booking.quote.promotion})`
+                : baht(0),
+            ],
+            ["ค่าเช่ารวมทั้งสิ้น", baht(booking.quote.total)],
+            ["หัก ค่ามัดจำที่ได้รับแล้ว", `−${baht(depAmount)}`],
+            ["ยอดค่าเช่าส่วนที่เหลือสุทธิ", baht(item.amount)],
+          ])
+        : "";
+    const bankOptions = [
+      ["ธนาคารกสิกรไทย (KBank) ****2231", "ธนาคารกสิกรไทย (KBank) ****2231"],
+      ["ธนาคารไทยพาณิชย์ (SCB) ****8840", "ธนาคารไทยพาณิชย์ (SCB) ****8840"],
+      ["ธนาคารกรุงเทพ (BBL) ****1092", "ธนาคารกรุงเทพ (BBL) ****1092"],
+    ];
+    return `${title("ใบแจ้งหนี้ " + invoiceLabels[item.kind], item.id + " · " + booking.id, "04 / PAYMENT")}
+      <div class="stack narrow">${section(
+        "ยอดที่ต้องชำระ",
+        `<div class="row"><strong class="metric">${baht(item.amount)}</strong>${badge(item.status)}</div>` +
+          details([
+            ["สาขาที่ออกใบแจ้งหนี้", branchName(item.branch)],
+            ["วันเวลาออกใบแจ้งหนี้", when(item.createdAt)],
+            ...(item.kind === "deposit"
+              ? [
+                  [
+                    "ครบกำหนดชำระ (ภายใน 24 ชม.)",
+                    when(booking.approvedAt + model.day),
+                  ],
+                ]
+              : []),
+            ...(item.status === "paid"
+              ? [
+                  ["อ้างอิงการชำระเงิน", item.reference],
+                  [
+                    "ธนาคาร/บัญชีผู้ชำระ",
+                    item.payerBank || "ธนาคารกสิกรไทย (KBank) ****2231",
+                  ],
+                  ["วันเวลาชำระ", when(item.paidAt)],
+                ]
+              : []),
+          ]) +
+          balanceBreakdown +
+          (item.kind === "extra"
+            ? chargeDetails(booking.returned.charges) +
+              `<div class="compare-grid">${inspectionSummary("สภาพก่อนส่งมอบ", booking.pickup)}${inspectionSummary("สภาพตอนรับคืน", booking.returned)}</div>`
+            : "") +
+          (pending
+            ? `<div class="invoice-card">${demoQr("CR:" + item.id)}<div class="stack"><span class="promptpay-header">THAI QR PromptPay</span><h3>สแกนชำระเงินจำลอง</h3>
+          <p class="muted">บริษัท เคออสโรด (ประเทศไทย) จำกัด · Ref: <strong class="code">CR:${safe(item.id)}</strong> · ยอดชำระ <strong>${baht(item.amount)}</strong></p></div></div>` +
+              (item.lastFailure
+                ? empty("ชำระเงินไม่สำเร็จ ใบแจ้งหนี้ยังเปิดให้ลองอีกครั้ง")
+                : "") +
+              form(
+                "pay",
+                hidden("invoiceId", item.id) +
+                  select(
+                    "payerBank",
+                    "เลือกธนาคาร/บัญชีผู้ชำระ (จำลอง PromptPay)",
+                    bankOptions,
+                    bankOptions[0][0],
+                  ) +
+                  actions(
+                    submit("จำลองชำระสำเร็จ", "paid") +
+                      submit("จำลองชำระไม่สำเร็จ", "failed", "secondary"),
+                  ),
+              ) +
+              (item.kind === "deposit"
+                ? actions(
+                    button(
+                      "จำลองเลยกำหนด 24 ชม.",
+                      'data-action="expire"',
+                      "secondary",
+                    ),
+                  )
+                : "")
+            : "") +
+          actions(go("กลับไปการจอง", "booking", booking.id)),
+      )}</div>`;
+  }
+
+  function manageBooking(ctx, cancel) {
+    const booking = findBookingForView(ctx);
+    const { state } = ctx;
+    const cancelReasons = [
+      "เปลี่ยนแผนการเดินทาง",
+      "ต้องการเปลี่ยนรุ่นรถยนต์",
+      "จองผิดวันหรือผิดสาขา",
+      "ติดภารกิจเร่งด่วน",
+    ];
+    return `${title(
+      cancel ? "ยกเลิกการจอง" : "เปลี่ยนรายละเอียดการคืน",
+      booking.id + " · " + booking.vehicle,
+      "02 / BOOKING",
+    )}
+      <div class="stack">${section(
+        "รายละเอียดเดิม",
+        routeDetails(state, booking) +
+          (cancel
+            ? form(
+                "cancel",
+                hidden("id", booking.id) +
+                  (state.invoices.some(
+                    (item) =>
+                      item.bookingId === booking.id &&
+                      item.kind === "deposit" &&
+                      item.status === "paid",
+                  )
+                    ? empty("ค่ามัดจำที่ชำระแล้วจะถูกเก็บตามเงื่อนไขการยกเลิก")
+                    : empty("ยกเลิกก่อนชำระมัดจำได้โดยไม่มีค่าใช้จ่าย")) +
+                  `<div class="chip-bar"><small class="muted">เลือกเหตุผลด่วน:</small>${cancelReasons
+                    .map(
+                      (r) =>
+                        `<button type="button" class="chip" data-action="fill-reason" data-target="reason" data-id="${safe(r)}">${safe(r)}</button>`,
+                    )
+                    .join("")}</div>` +
+                  notes("reason", "เหตุผลการยกเลิก", true) +
+                  actions(
+                    submit("ยืนยันยกเลิก", "", "danger") +
+                      go("กลับไปการจอง", "booking", booking.id),
+                  ),
+              )
+            : form(
+                "change",
+                hidden("id", booking.id) +
+                  (booking.contract
+                    ? empty(
+                        "เมื่อเปลี่ยนเส้นทางหรือวันคืน พนักงานจะสร้างสัญญาฉบับใหม่ให้ทั้งสองฝ่ายลงนาม",
+                      )
+                    : "") +
+                  fields(
+                    select("drop", "สาขาคืนรถ", branches, booking.drop) +
+                      input(
+                        "end",
+                        "วันเวลาคืนรถ",
+                        dateInput(booking.end),
+                        "datetime-local",
+                      ),
+                  ) +
+                  actions(
+                    submit("บันทึกและคำนวณใหม่") +
+                      go("กลับไปการจอง", "booking", booking.id),
+                  ),
+              )),
+      )}</div>`;
+  }
+
+  // --- Staff & Shared Booking Detail Screens ---
+
+  function queue(ctx) {
+    const { state, actor } = ctx;
+    const pickup = state.bookings
+      .filter((item) => item.pick === actor.branch)
+      .reverse();
+    const returns = state.bookings
+      .filter(
+        (item) =>
+          item.drop === actor.branch &&
+          ["renting", "completed"].includes(item.status),
+      )
+      .reverse();
+    const pendingCount = pickup.filter((item) => item.status === "pending").length;
+    const approvedCount = pickup.filter(
+      (item) => item.status === "approved",
+    ).length;
+    const rentingReturnCount = returns.filter(
+      (item) => item.status === "renting",
+    ).length;
+    const branchCars = state.cars.filter(
+      (car) => car.branch === actor.branch && car.status === "available",
+    ).length;
+    return (
+      title(
+        "การจองสาขา",
+        branchName(actor.branch) +
+          " · ตรวจสอบเอกสาร จัดทำสัญญา ส่งมอบและรับคืนรถ",
+        "RENTAL STAFF",
+      ) +
+      `<div class="stack">${kpiStrip([
+        { label: "คำขอรออนุมัติ (รับที่สาขา)", value: pendingCount },
+        { label: "อนุมัติแล้ว / รอส่งมอบ", value: approvedCount },
+        { label: "กำลังเช่า (รอรับคืนที่สาขา)", value: rentingReturnCount },
+        {
+          label: "รถพร้อมใช้งานในสาขา",
+          value: `${branchCars} คัน`,
+          dark: true,
+        },
+      ])}${section("รับรถที่สาขานี้", bookingRows(pickup))}${section("คืนรถที่สาขานี้", bookingRows(returns))}</div>`
+    );
+  }
+
+  function outbox(ctx) {
+    const { state, actor } = ctx;
+    const messages = state.messages
+      .filter((item) => item.pick === actor.branch)
+      .slice()
+      .reverse();
+    return (
+      title(
+        "อีเมลยืนยัน",
+        branchName(actor.branch) + " · กล่องข้อความจำลอง (DFD 2.5)",
+        "RENTAL STAFF",
+      ) +
+      `<div class="stack">${kpiStrip([
+        { label: "อีเมลยืนยันที่ส่งแล้ว", value: messages.length },
+        { label: "สาขาที่รับผิดชอบ", value: actor.branch, dark: true },
+      ])}${section(
+        "การส่งอีเมลของสาขา",
+        messages.length
+          ? `<div class="grid">${messages
+              .map(
+                (message) => `<article class="card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">CONFIRMATION EMAIL</p>
+            <h3>ยืนยันการจอง ${safe(message.bookingId)}</h3>
+          </div>
+          <span class="pill paid">ส่งแล้ว (จำลอง)</span>
+        </div>
+        ${details([
+          ["ถึง", message.to],
+          ["ลูกค้า", message.name],
+          ["ประเภทรถ", message.type],
+          ["รับรถ", `${branchName(message.pick)} · ${when(message.start)}`],
+          ["คืนรถ", `${branchName(message.drop)} · ${when(message.end)}`],
+          ["เวลาที่ส่ง", when(message.at)],
+        ])}
+        ${actions(go("ดู " + message.bookingId, "booking", message.bookingId))}
+      </article>`,
+              )
+              .join("")}</div>`
+          : empty("ยังไม่มีอีเมลยืนยันของสาขา"),
+      )}</div>`
+    );
+  }
+
+  function inlineDocPreview(state, booking) {
+    const customer = state.users.find((item) => item.username === booking.owner);
+    const holder = customer?.name || booking.owner;
+    return `<div class="compare-grid">
+      <div class="compare-box stack">
+        <strong>สำเนาบัตรประจำตัวประชาชน</strong>
+        <img class="doc-preview-img" data-doc-key="${safe(booking.identity?.key || "")}" src="${syntheticDocDataUrl("ID CARD", holder)}" alt="ตัวอย่างสำเนาบัตรประชาชน">
+        ${attachmentLink("บัตรประชาชน", booking.identity)}
+      </div>
+      <div class="compare-box stack">
+        <strong>สำเนาใบอนุญาตขับขี่</strong>
+        <img class="doc-preview-img" data-doc-key="${safe(booking.licence?.key || "")}" src="${syntheticDocDataUrl("DRIVING LICENCE", holder)}" alt="ตัวอย่างสำเนาใบขับขี่">
+        ${attachmentLink("ใบขับขี่", booking.licence)}
+      </div>
+    </div>`;
+  }
+
+  function reviewForm(state, booking) {
+    const customer = state.users.find((item) => item.username === booking.owner);
+    const rentals = state.bookings.filter(
+      (item) => item.owner === customer.username && item.status === "completed",
+    ).length;
+    const rejectReasons = [
+      "ใบขับขี่หมดอายุ",
+      "ภาพเอกสารไม่ชัดเจน",
+      "ชื่อไม่ตรงกับผู้จอง",
+      "เอกสารไม่ครบถ้วน",
+    ];
+    return section(
+      "ตรวจสอบคำขอและเอกสารยืนยันตัวตน (DFD 2.4)",
+      details([
+        ["ลูกค้า", customer.name],
+        ["Username", customer.username],
+        ["อีเมล", customer.email],
+        ["โทรศัพท์", customer.phone],
+        ["เช่าเสร็จสิ้นแล้ว", `${rentals} ครั้ง`],
+      ]) +
+        inlineDocPreview(state, booking) +
+        form(
+          "review",
+          hidden("id", booking.id) +
+            checkbox(
+              "verified",
+              "ตรวจเอกสารทั้งสองรายการแล้ว (ชื่อตรงกับผู้จอง และใบขับขี่ครอบคลุมวันเช่า)",
+            ) +
+            `<div class="chip-bar"><small class="muted">ระบุเหตุผลปฏิเสธด่วน:</small>${rejectReasons
+              .map(
+                (r) =>
+                  `<button type="button" class="chip" data-action="fill-reason" data-target="reason" data-id="${safe(r)}">${safe(r)}</button>`,
+              )
+              .join("")}</div>` +
+            notes("reason", "เหตุผลหากปฏิเสธ") +
+            actions(
+              submit("อนุมัติคำขอ", "approve") +
+                submit("ปฏิเสธคำขอ", "reject", "danger"),
+            ),
+        ),
+    );
+  }
+
+  function contractPanel(ctx, booking) {
+    const { state, actor } = ctx;
+    const contract = booking.contract;
+    if (!contract) return "";
+    const renter = state.users.find((item) => item.username === booking.owner);
+    const canSign =
+      booking.status === "approved" &&
+      !contract[actor.role] &&
+      (actor.role === "customer" || actor.branch === booking.pick);
+    const sigBox = (roleTitle, record) => `<div class="sig-slot">
+      <small class="muted">${safe(roleTitle)}</small>
+      ${record?.drawn ? `<img src="${safe(record.drawn)}" alt="ลายเซ็นอิเล็กทรอนิกส์">` : ""}
+      <div><strong>${record ? safe(record.name) : "ยังไม่ได้ลงนามสัญญา"}</strong></div>
+      <small class="muted">${record ? when(record.at) : "ยังไม่ได้ลงนาม"}</small>
+    </div>`;
+    return section(
+      "สัญญาเช่ารถ " + contract.id,
+      `<div class="contract-paper">
+      <div class="row"><div><strong>หนังสือสัญญาเช่ารถยนต์อิเล็กทรอนิกส์</strong><br><small class="muted">บริษัท เคออสโรด (ประเทศไทย) จำกัด</small></div>
+        <span class="code">${safe(contract.id)} · ${safe(booking.id)}</span></div>
+      ${routeDetails(state, booking)}
+      ${details([
+        ["ชื่อผู้เช่า", renter.name],
+        ["ชื่อผู้ให้เช่า", contract.lessor],
+        ["ประเภทรถ", contract.type ?? booking.type],
+        [
+          "ปีและสี",
+          [contract.year, contract.color].filter(Boolean).join(" · ") || "—",
+        ],
+        [
+          "ลายเซ็นลูกค้า",
+          contract.customer
+            ? `${contract.customer.name} · ${when(contract.customer.at)}`
+            : "รอลงนาม",
+        ],
+        [
+          "ลายเซ็นพนักงาน",
+          contract.staff
+            ? `${contract.staff.name} · ${when(contract.staff.at)}`
+            : "รอลงนาม",
+        ],
+        [
+          "ค่าคืนช้า",
+          `ผ่อนผัน 30 นาที · ${baht(booking.quote.lateRate)}/ชม. · สูงสุดอัตราเช่า 1 วัน (${baht(booking.quote.rate)})`,
+        ],
+      ])}
+      <div class="contract-terms">
+        <strong>ข้อกำหนดและเงื่อนไขสัญญาเช่า:</strong> 1) ผู้เช่าต้องคืนรถตามวันเวลาและสาขาที่ระบุ หากล่าช้าเกิน 30 นาที คิดค่าปรับชั่วโมงละ ${baht(booking.quote.lateRate)} สูงสุดไม่เกินค่าเช่า 1 วัน · 2) คืนรถพร้อมระดับน้ำมันเท่ากับตอนรับรถ · 3) ผู้เช่ารับผิดชอบความเสียหายใหม่ที่ตรวจพบตอนคืนรถตามจริง · 4) ห้ามนำรถออกนอกราชอาณาจักร
+      </div>
+      <div class="sig-boxes">
+        ${sigBox("ผู้ให้เช่า (พนักงานสาขา)", contract.staff)}
+        ${sigBox("ผู้เช่า (ลูกค้า)", contract.customer)}
+      </div>
+      ${actions(attachmentLink("สำเนาบัตรประชาชน", booking.identity) + attachmentLink("สำเนาใบขับขี่", booking.licence))}
+    </div>` +
+        (canSign
+          ? form(
+              "sign",
+              hidden("id", booking.id) +
+                hidden("drawnSig", "") +
+                `<div class="sig-pad-wrap">
+        <div class="row"><strong>วาดลายเซ็นอิเล็กทรอนิกส์ หรือพิมพ์ชื่อด้านล่าง (DFD 3.2)</strong>
+          ${button("ล้างลายเซ็นที่วาด", 'data-action="clear-sig"', "secondary")}</div>
+        <canvas class="sig-canvas" width="560" height="130" data-default-signer="${safe(actor.name)}"></canvas>
+        <small class="muted">สามารถใช้เมาส์หรือนิ้ววาดลายเซ็นในกรอบประสีส้ม (ระบบจะเติมชื่อลงนามให้อัตโนมัติ) หรือพิมพ์ชื่อในช่องด้านล่าง</small>
+      </div>` +
+                input("signature", "พิมพ์ชื่อเพื่อเซ็นสัญญา", actor.name) +
+                checkbox(
+                  "consent",
+                  "ยืนยันการลงนามอิเล็กทรอนิกส์สำหรับสัญญาฉบับนี้",
+                  true,
+                ) +
+                actions(submit("ลงนามสัญญา")),
+            )
+          : ""),
+    );
+  }
+
+  function inspectionFields(state, booking, returning) {
+    const car = model.getVehicle(state, booking.carId);
+    const initialFuel = returning ? booking.pickup.fuel : 100;
+    const noteChips = returning
+      ? [
+          "สภาพปกติ ไม่มีริ้วรอยใหม่",
+          "มีรอยขีดข่วนกันชนหลัง",
+          "ระดับน้ำมันต่ำกว่าตอนส่งมอบ",
+          "ต้องเข้าศูนย์ตรวจเช็กระยะ",
+        ]
+      : [
+          "ตัวถังปกติ อุปกรณ์ยางอะไหล่ครบ",
+          "มีรอยขนแมวเล็กน้อยที่ประตูขวา",
+          "ล้อแม็กหน้าซ้ายมีรอยเดิม",
+          "ห้องโดยสารสะอาด พร้อมส่งมอบ",
+        ];
+    return (
+      fields(
+        input(
+          "recordedAt",
+          returning ? "วันเวลารับคืนจริง" : "วันเวลาส่งมอบจริง",
+          dateInput(returning ? booking.end : booking.start),
+          "datetime-local",
+        ) +
+          input(
+            "odometer",
+            returning ? "เลขไมล์สิ้นสุด" : "เลขไมล์เริ่มต้น",
+            returning ? booking.pickup.odometer : car.odometer,
+            "number",
+            'required min="0" step="1"',
+          ) +
+          input(
+            "fuel",
+            returning ? "ระดับน้ำมันสิ้นสุด (%)" : "ระดับน้ำมันเริ่มต้น (%)",
+            initialFuel,
+            "number",
+            'required min="0" max="100" step="1"',
+          ) +
+          fileField(
+            "photo",
+            returning ? "ภาพความเสียหายใหม่ (ถ้ามี)" : "ภาพริ้วรอยเดิม (ถ้ามี)",
+            true,
+          ),
+      ) +
+      fuelGaugeWidget(initialFuel) +
+      `<div class="chip-bar"><small class="muted">ข้อความหมายเหตุด่วน:</small>${noteChips
+        .map(
+          (c) =>
+            `<button type="button" class="chip" data-action="fill-reason" data-target="notes" data-id="${safe(c)}">${safe(c)}</button>`,
+        )
+        .join("")}</div>` +
+      notes("notes", "หมายเหตุการตรวจสภาพ")
+    );
+  }
+
+  function handoverPanel(ctx, booking) {
+    const { state, actor } = ctx;
+    if (
+      actor.role !== "staff" ||
+      booking.pick !== actor.branch ||
+      booking.status !== "approved" ||
+      !booking.contract?.customer ||
+      !booking.contract?.staff
+    ) {
+      return "";
+    }
+    return section(
+      "ตรวจสภาพและส่งมอบรถ (DFD 3.3 & 4.2)",
+      form(
+        "handover",
+        hidden("id", booking.id) +
+          inspectionFields(state, booking, false) +
+          actions(submit("ยืนยันส่งมอบและออกใบแจ้งหนี้ค่าเช่า", "issue")),
+      ),
+    );
+  }
+
+  function returnPanel(ctx, booking) {
+    const { state, actor } = ctx;
+    if (
+      actor.role !== "staff" ||
+      booking.drop !== actor.branch ||
+      booking.status !== "renting"
+    ) {
+      return "";
+    }
+    const dmgPresets = [
+      ["ไม่มีความเสียหาย (฿0)", 0],
+      ["รอยขีดข่วนกันชน (฿2,500)", 2500],
+      ["ล้อแม็กถลอก (฿1,500)", 1500],
+      ["รอยบุบประตู (฿4,500)", 4500],
+    ];
+    const fuelPresets = [
+      ["น้ำมันครบ (฿0)", 0],
+      ["ขาด 1/8 ถัง (฿400)", 400],
+      ["ขาด 2/8 ถัง (฿800)", 800],
+      ["ขาดครึ่งถัง (฿1,600)", 1600],
+    ];
+    return section(
+      "ตรวจสภาพและรับคืนรถ (DFD 3.4, 3.5 & 4.3)",
+      inspectionSummary("สภาพตอนส่งมอบ", booking.pickup) +
+        form(
+          "returnCar",
+          hidden("id", booking.id) +
+            inspectionFields(state, booking, true) +
+            `<div class="chip-bar"><small class="muted">ตัวช่วยคิดค่าน้ำมันขาด:</small>${fuelPresets
+              .map(
+                ([label, val]) =>
+                  `<button type="button" class="chip" data-action="set-fee" data-target="fuelFee" data-id="${val}">${safe(label)}</button>`,
+              )
+              .join("")}</div>` +
+            `<div class="chip-bar"><small class="muted">ตัวช่วยประเมินค่าความเสียหาย:</small>${dmgPresets
+              .map(
+                ([label, val]) =>
+                  `<button type="button" class="chip" data-action="set-fee" data-target="damageFee" data-id="${val}">${safe(label)}</button>`,
+              )
+              .join("")}</div>` +
+            fields(
+              input(
+                "fuelFee",
+                "ค่าน้ำมันขาด (บาท)",
+                0,
+                "number",
+                'required min="0" step="1"',
+              ) +
+                input(
+                  "damageFee",
+                  "ค่าความเสียหาย (บาท)",
+                  0,
+                  "number",
+                  'required min="0" step="1"',
+                ) +
+                select(
+                  "condition",
+                  "ผลตรวจหลังรับคืน",
+                  statuses.filter(([key]) =>
+                    ["available", "maintenance"].includes(key),
+                  ),
+                  "available",
+                ),
+            ) +
+            `<div class="callout" id="charge-preview">${chargeDetails({ lateHours: 0, late: 0, fuel: 0, damage: 0, total: 0 })}</div>` +
+            actions(
+              submit("ยืนยันรับคืนและออกใบแจ้งหนี้", "issue") +
+                submit("บันทึกรับคืนอย่างเดียว", "save", "secondary"),
+            ),
+        ),
+    );
+  }
+
+  function invoiceList(ctx, booking) {
+    const { state, actor } = ctx;
+    const invoices = state.invoices.filter(
+      (item) => item.bookingId === booking.id,
+    );
+    const canIssueBalance =
+      actor.role === "staff" &&
+      booking.pick === actor.branch &&
+      booking.pickup &&
+      booking.quote.total >
+        (invoices.find((item) => item.kind === "deposit")?.amount || 0) &&
+      !invoices.some((item) => item.kind === "balance");
+    const canIssueReturn =
+      actor.role === "staff" &&
+      booking.drop === actor.branch &&
+      booking.returned?.charges.total > 0 &&
+      !invoices.some((item) => item.kind === "extra");
+    const rows = invoices.map((item) => [
+      `<strong class="code">${safe(item.id)}</strong>`,
+      safe(invoiceLabels[item.kind]),
+      `<strong>${baht(item.amount)}</strong>`,
+      badge(item.status),
+      actor.role === "customer"
+        ? go("ดูใบแจ้งหนี้ " + invoiceLabels[item.kind], "invoice", item.id)
+        : safe(
+            item.reference
+              ? `${item.reference} · ${item.payerBank || "PromptPay"}`
+              : "—",
+          ),
+    ]);
+    return (
+      section(
+        "ใบแจ้งหนี้และการชำระเงิน (DFD Process 4)",
+        invoices.length
+          ? table(["Invoice ID", "ประเภท", "ยอด", "สถานะ", "รายละเอียด"], rows)
+          : empty(
+              booking.status === "pending"
+                ? "ใบแจ้งหนี้มัดจำจะออกหลังสาขาอนุมัติ"
+                : "ยังไม่มีใบแจ้งหนี้ที่ต้องชำระ",
+            ),
+      ) +
+      (canIssueBalance
+        ? form(
+            "issueBalance",
+            hidden("id", booking.id) +
+              actions(submit("ออกใบแจ้งหนี้ค่าเช่าที่เหลือ")),
+          )
+        : "") +
+      (canIssueReturn
+        ? form(
+            "issueReturn",
+            hidden("id", booking.id) +
+              actions(submit("ออกใบแจ้งหนี้ค่าบริการเพิ่มเติม")),
+          )
+        : "")
+    );
+  }
+
+  function nextStepBanner(ctx, booking, depositPaid) {
+    const { state, actor } = ctx;
+    const staffAcc = (branch) =>
+      state.users.find((u) => u.role === "staff" && u.branch === branch);
+    const switchBtn = (user, label) =>
+      user && user.username !== actor.username
+        ? button(label, `data-action="quick-user" data-id="${safe(user.username)}"`, "secondary")
+        : "";
+
+    let hint = "";
+    let actionHtml = "";
+
+    if (booking.status === "pending") {
+      const target = staffAcc(booking.pick);
+      hint = `ขั้นตอนถัดไป: พนักงานสาขา ${booking.pick} ตรวจสอบเอกสารและอนุมัติคำขอ`;
+      actionHtml = switchBtn(target, `สลับเป็น พนง. ${booking.pick}`);
+    } else if (booking.status === "approved" && !depositPaid) {
+      const target = state.users.find((u) => u.username === booking.owner);
+      hint = "ขั้นตอนถัดไป: ลูกค้าชำระค่ามัดจำผ่าน QR PromptPay (กดดูใบแจ้งหนี้ด้านล่าง)";
+      actionHtml = switchBtn(target, "สลับเป็นลูกค้า");
+    } else if (booking.status === "approved" && !booking.contract) {
+      const target = staffAcc(booking.pick);
+      hint = `ขั้นตอนถัดไป: พนักงานสาขา ${booking.pick} กด "สร้างสัญญาเช่ารถ"`;
+      actionHtml = switchBtn(target, `สลับเป็น พนง. ${booking.pick}`);
+    } else if (booking.status === "approved" && !booking.contract.staff) {
+      const target = staffAcc(booking.pick);
+      hint = `ขั้นตอนถัดไป: พนักงานสาขา ${booking.pick} ลงนามในสัญญาเช่ารถ`;
+      actionHtml = switchBtn(target, `สลับเป็น พนง. ${booking.pick}`);
+    } else if (booking.status === "approved" && !booking.contract.customer) {
+      const target = state.users.find((u) => u.username === booking.owner);
+      hint = "ขั้นตอนถัดไป: ลูกค้าลงนามในสัญญาเช่าอิเล็กทรอนิกส์";
+      actionHtml = switchBtn(target, "สลับเป็นลูกค้า");
+    } else if (booking.status === "approved") {
+      const target = staffAcc(booking.pick);
+      hint = `ขั้นตอนถัดไป: พนักงานสาขา ${booking.pick} ตรวจสภาพและส่งมอบรถ`;
+      actionHtml = switchBtn(target, `สลับเป็น พนง. ${booking.pick}`);
+    } else if (booking.status === "renting") {
+      const target = staffAcc(booking.drop);
+      hint = `ขั้นตอนถัดไป: พนักงานสาขาปลายทาง (${booking.drop}) ตรวจสภาพและรับคืนรถ`;
+      actionHtml = switchBtn(target, `สลับเป็น พนง. ${booking.drop}`);
+    } else if (
+      booking.status === "completed" &&
+      state.invoices.some((i) => i.bookingId === booking.id && i.status === "unpaid")
+    ) {
+      const target = state.users.find((u) => u.username === booking.owner);
+      hint = "ขั้นตอนถัดไป: ลูกค้าชำระใบแจ้งหนี้ที่ค้างอยู่";
+      actionHtml = switchBtn(target, "สลับเป็นลูกค้า");
+    }
+
+    if (!hint) return "";
+    return `<div class="callout row"><span><strong>${safe(hint)}</strong></span>${actionHtml}</div>`;
+  }
+
+  function bookingScreen(ctx) {
+    const booking = findBookingForView(ctx);
+    const { state, actor } = ctx;
+    const depositPaid =
+      booking.status !== "pending" && model.hasDeposit(state, booking);
+    const steps = [
+      ["ส่งคำขอ", true],
+      ["อนุมัติ", !!booking.approvedAt],
+      ["มัดจำ", depositPaid],
+      ["ลงนาม", booking.contract?.staff && booking.contract?.customer],
+      ["รับรถ", !!booking.pickup],
+      ["คืนรถ", !!booking.returned],
+    ];
+    const staffPickup = actor.role === "staff" && booking.pick === actor.branch;
+    const active = ["pending", "approved"].includes(booking.status);
+    const customerBtns = actions(
+      (active ? go("เปลี่ยนรายละเอียดการคืน", "change", booking.id) : "") +
+        (active ? go("ยกเลิกการจอง", "cancel", booking.id, "danger") : ""),
+    );
+
+    return `${title("การจอง " + booking.id, booking.vehicle + " · ทะเบียน " + booking.plate, "BOOKING DETAIL")}<div class="stack">
+      ${section(
+        "สถานะการจอง",
+        `<div class="row">${badge(booking.status)}<span class="code">${safe(booking.id)}</span></div>` +
+          `<ol class="timeline">${steps.map(([label, done]) => `<li class="${done ? "done" : ""}">${done ? "✓ " : ""}${label}</li>`).join("")}</ol>` +
+          nextStepBanner(ctx, booking, depositPaid) +
+          (booking.reason ? empty(booking.reason) : "") +
+          (booking.approvedAt
+            ? empty("อีเมลยืนยันการจองส่งแล้วในระบบจำลอง")
+            : "") +
+          routeDetails(state, booking) +
+          (booking.difference === undefined
+            ? ""
+            : details([
+                ["ส่วนต่างจากการแก้ไขล่าสุด", baht(booking.difference)],
+              ])) +
+          (actor.role === "customer" ? customerBtns : ""),
+      )}
+      ${staffPickup && booking.status === "pending" ? reviewForm(state, booking) : ""}
+      ${
+        staffPickup && booking.status === "approved" && !booking.contract
+          ? section(
+              "จัดทำสัญญาเช่ารถ (DFD 3.1)",
+              depositPaid
+                ? form(
+                    "contract",
+                    hidden("id", booking.id) +
+                      actions(submit("สร้างสัญญาเช่ารถ")),
+                  )
+                : empty("รอลูกค้าชำระมัดจำก่อนสร้างสัญญา"),
+            )
+          : ""
+      }
+      ${contractPanel(ctx, booking)}
+      ${handoverPanel(ctx, booking)}
+      ${booking.pickup && !booking.returned ? section("บันทึกการส่งมอบ", inspectionSummary("สภาพตอนส่งมอบ", booking.pickup)) : ""}
+      ${returnPanel(ctx, booking)}
+      ${
+        booking.returned
+          ? section(
+              "บันทึกการรับคืนและเปรียบเทียบสภาพรถ",
+              `<div class="compare-grid">${inspectionSummary("สภาพตอนส่งมอบ", booking.pickup)}${inspectionSummary("สภาพตอนรับคืน", booking.returned)}</div>` +
+                details([
+                  [
+                    "สถานะรถหลังรับคืน",
+                    statusLabels[booking.returned.condition],
+                  ],
+                ]) +
+                chargeDetails(booking.returned.charges),
+            )
+          : ""
+      }
+      ${invoiceList(ctx, booking)}
+      </div>`;
+  }
+
+  // --- Admin Screens ---
+
+  function fleet(ctx) {
+    const { state, actor, filter } = ctx;
+    const isAdmin = actor.role === "admin";
+    const cars = state.cars.filter((car) =>
+      isAdmin
+        ? filter === "all" || car.branch === filter
+        : car.branch === actor.branch,
+    );
+    const availCount = cars.filter((c) => c.status === "available").length;
+    const rentedCount = cars.filter((c) => c.status === "rented").length;
+    const maintCount = cars.filter((c) => c.status === "maintenance").length;
+
+    return (
+      title(
+        isAdmin ? "ยานพาหนะ" : "รถประจำสาขา",
+        isAdmin
+          ? "ค้นตามสาขาและจัดการทะเบียนรถ (DFD 5.1 & 5.4)"
+          : branchName(actor.branch),
+        isAdmin ? "05 / FLEET" : "RENTAL STAFF",
+      ) +
+      `<div class="stack">${kpiStrip([
+        { label: "รถในรายการ", value: `${cars.length} คัน` },
+        { label: "พร้อมใช้งาน", value: availCount },
+        { label: "อยู่ระหว่างถูกเช่า", value: rentedCount },
+        { label: "อยู่ระหว่างซ่อมบำรุง", value: maintCount },
+      ])}${section(
+        "รายการรถ",
+        (isAdmin
+          ? toolbar(
+              go("เพิ่มรถ", "vehicle", "", "") +
+                form(
+                  "fleetFilter",
+                  select(
+                    "branch",
+                    "กรองตามสาขา",
+                    [["all", "ทุกสาขา"], ...branches],
+                    filter,
+                  ) + submit("แสดงรายการ", "", "secondary"),
+                  "toolbar-form",
+                ),
+            )
+          : "") +
+          (cars.length
+            ? table(
+                [
+                  "ทะเบียน / รุ่น",
+                  "สาขา",
+                  "ข้อมูลรถ",
+                  "สถานะ",
+                  ...(isAdmin ? ["จัดการ"] : []),
+                ],
+                cars.map((car) => [
+                  `<strong>${safe(car.plate)}</strong><br>${safe(car.brand + " " + car.model)}`,
+                  safe(branchName(car.branch)),
+                  `${safe(car.type)} · ${safe(car.color)} · ${safe(car.year)}<br><small>${safe(car.fuel)} · ${car.seats} ที่นั่ง · ${car.odometer.toLocaleString()} กม.</small>${car.notes ? `<br><small>${safe(car.notes)}</small>` : ""}`,
+                  badge(car.status),
+                  ...(isAdmin
+                    ? [go("แก้ไข " + car.plate, "vehicle", car.id)]
+                    : []),
+                ]),
+              )
+            : empty("ไม่พบรถในสาขาที่เลือก")),
+      )}</div>`
+    );
+  }
+
+  function vehicleEditor(ctx) {
+    const { state, selected } = ctx;
+    const car = selected
+      ? model.getVehicle(state, selected)
+      : {
+          plate: "",
+          brand: "",
+          model: "",
+          color: "",
+          fuel: "",
+          year: 2024,
+          seats: 5,
+          odometer: 0,
+          type: "Sedan",
+          branch: "BKK",
+          status: "available",
+        };
+    const visibleStatuses = statuses.filter(
+      ([key]) => key !== "rented" || car.status === "rented",
+    );
+    return (
+      title(selected ? "แก้ไขข้อมูลรถ" : "เพิ่มรถ", car.plate, "05 / FLEET") +
+      `<div class="stack">${section(
+        "ข้อมูลทะเบียนรถ (DFD 5.1)",
+        form(
+          "vehicle",
+          hidden("id", selected) +
+            fields(
+              input("plate", "ทะเบียน", car.plate) +
+                input("brand", "ยี่ห้อ", car.brand) +
+                input("model", "รุ่น", car.model) +
+                select("type", "ประเภทรถ", types, car.type) +
+                input("color", "สี", car.color) +
+                input("fuel", "เชื้อเพลิง", car.fuel) +
+                input("year", "ปี", car.year, "number") +
+                input("seats", "ที่นั่ง", car.seats, "number") +
+                input("odometer", "เลขไมล์", car.odometer, "number") +
+                select("branch", "สาขา", branches, car.branch) +
+                select("status", "สถานะรถ", visibleStatuses, car.status),
+            ) +
+            notes("notes", "หมายเหตุ", false, car.notes) +
+            actions(submit("บันทึกรถ") + go("กลับรายการรถ", "fleet")),
+        ) +
+          (selected
+            ? form(
+                "removeVehicle",
+                hidden("id", selected) +
+                  actions(submit("ลบทะเบียนนี้", "", "danger")),
+              )
+            : ""),
+      )}</div>`
+    );
+  }
+
+  function pricing(ctx) {
+    const { state, selected } = ctx;
+    if (!selected) {
+      return (
+        title(
+          "ราคาและโปรโมชัน",
+          "กำหนดเงื่อนไขตามทะเบียนรถ (DFD 5.2)",
+          "05 / PRICING",
+        ) +
+        `<div class="stack">${section(
+          "ราคาแต่ละทะเบียน",
+          state.cars.length
+            ? table(
+                [
+                  "ทะเบียน / รถ",
+                  "รายวัน",
+                  "7 วันขึ้นไป",
+                  "มัดจำ",
+                  "คืนต่างสาขา",
+                  "จัดการ",
+                ],
+                state.cars.map((car) => [
+                  `<strong>${safe(car.plate)}</strong> · ${safe(car.brand + " " + car.model)}<br><small class="muted">${safe(model.promotions[car.pricing.promo]?.[0] || "")}</small>`,
+                  baht(car.pricing.daily),
+                  baht(car.pricing.weekly),
+                  baht(car.pricing.deposit),
+                  `<small>ในภาค ${baht(car.pricing.regional)}<br>ข้ามภาค ${baht(car.pricing.interregional)}</small>`,
+                  go("ตั้งราคา " + car.plate, "pricing", car.id),
+                ]),
+              )
+            : empty("เพิ่มรถก่อนกำหนดราคา"),
+        )}</div>`
+      );
+    }
+    const car = model.getVehicle(state, selected);
+    const pricingFields = [
+      ["daily", "อัตราเช่าต่อวัน (บาท)"],
+      ["weekly", "อัตราต่อวันเมื่อเช่า 7 วันขึ้นไป (บาท)"],
+      ["deposit", "มัดจำ (บาท)"],
+      ["regional", "คืนต่างสาขาภูมิภาคเดียวกัน (บาท)"],
+      ["interregional", "คืนต่างสาขาข้ามภูมิภาค (บาท)"],
+      ["late", "ค่าคืนช้าต่อชั่วโมง (บาท)"],
+    ];
+    return (
+      title(
+        "ตั้งราคา " + car.plate,
+        car.brand + " " + car.model,
+        "05 / PRICING",
+      ) +
+      `<div class="stack">${section(
+        "เงื่อนไขค่าเช่า",
+        form(
+          "pricing",
+          hidden("id", car.id) +
+            fields(
+              pricingFields
+                .map(([name, label]) =>
+                  input(
+                    name,
+                    label,
+                    car.pricing[name],
+                    "number",
+                    'required min="0" step="1"',
+                  ),
+                )
+                .join("") +
+                select(
+                  "promo",
+                  "โปรโมชันอัตโนมัติ",
+                  Object.entries(model.promotions).map(([key, [label]]) => [
+                    key,
+                    label,
+                  ]),
+                  car.pricing.promo,
+                ),
+            ) +
+            actions(submit("บันทึกราคา") + go("กลับไปรายการราคา", "pricing")),
+        ),
+      )}</div>`
+    );
+  }
+
+  function maintenance(ctx) {
+    const { state } = ctx;
+    const open = state.maintenance.filter((item) => !item.result);
+    const history = state.maintenance.filter((item) => item.result);
+    return (
+      title(
+        "บำรุงรักษา",
+        "วางแผนตามวันหรือเลขไมล์ ติดตามความคืบหน้า และบันทึกผลการซ่อมบำรุง (DFD 5.3)",
+        "05 / MAINTENANCE",
+      ) +
+      `<div class="stack">${section(
+        "แผนบำรุงรักษา (DFD 5.3.3)",
+        actions(go("สร้างแผน", "plan", "", "")) +
+          (open.length
+            ? table(
+                [
+                  "ทะเบียน / งาน",
+                  "ช่วงเวลา / อู่",
+                  "เงื่อนไข & ความคืบหน้า",
+                  "จัดการ",
+                ],
+                open.map((item) => {
+                  const car = state.cars.find((c) => c.id === item.carId);
+                  const pct =
+                    item.trigger === "km" && item.targetKm && car
+                      ? Math.min(
+                          100,
+                          Math.max(
+                            10,
+                            Math.round((car.odometer / item.targetKm) * 100),
+                          ),
+                        )
+                      : 75;
+                  return [
+                    `<strong>${safe(item.plate)}</strong> · ${safe(item.task)}<br><small class="muted">${safe(item.maintType || "เช็กระยะตามคู่มือ")}</small>`,
+                    `${when(item.start)} → ${when(item.end)}<br><small class="muted">${safe(item.garage || "ศูนย์บริการมาตรฐาน")} · แจ้งเตือน ${safe(item.advanceNotice || "1,000 กม.")}</small>`,
+                    `${item.trigger === "km" ? `ครบที่ ${item.targetKm?.toLocaleString()} กม. (ปัจจุบัน ${car?.odometer.toLocaleString() || 0} กม.)` : "ตามกำหนดวัน"} · <small>${safe(item.frequency || "ทุก 10,000 กม.")}</small>
+             <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>`,
+                    go("บันทึกผล " + item.id, "result", item.id),
+                  ];
+                }),
+              )
+            : empty("ยังไม่มีแผนบำรุงรักษาที่เปิดอยู่")),
+      )}
+      ${section(
+        "ประวัติการบำรุงรักษา (DFD 5.3.4)",
+        history.length
+          ? table(
+              [
+                "ทะเบียน / งาน",
+                "ผล",
+                "อู่ / อะไหล่",
+                "ค่าใช้จ่าย",
+                "บันทึกเมื่อ",
+              ],
+              history.map((item) => [
+                `<strong>${safe(item.plate)}</strong> · ${safe(item.task)}`,
+                safe(item.result.summary),
+                `<small>${safe(item.result.garage || "ศูนย์บริการ")}<br>อะไหล่: ${safe(item.result.parts || "—")}</small>`,
+                baht(item.result.cost),
+                when(item.result.at),
+              ]),
+            )
+          : empty("ยังไม่มีผลการบำรุงรักษา"),
+      )}</div>`
+    );
+  }
+
+  function maintenanceEditor(ctx, result) {
+    const { state, selected } = ctx;
+    if (result) {
+      const plan = state.maintenance.find(
+        (item) => item.id === selected && !item.result,
+      );
+      if (!plan) throw new Error("ไม่พบแผนที่เปิดอยู่");
+      const car = model.getVehicle(state, plan.carId);
+      return (
+        title(
+          "บันทึกผลบำรุงรักษา",
+          plan.plate + " · " + plan.task,
+          "05 / MAINTENANCE",
+        ) +
+        `<div class="stack">${section(
+          "ผลบำรุงรักษา (DFD 5.3.2)",
+          form(
+            "maintenance",
+            hidden("id", plan.id) +
+              notes("result", "ผลการดำเนินงาน / รายการที่ดำเนินการ", true) +
+              fields(
+                input(
+                  "parts",
+                  "อะไหล่ที่เปลี่ยน",
+                  "น้ำมันเครื่องสังเคราะห์, ไส้กรองมาตรฐาน",
+                  "text",
+                  "",
+                ) +
+                  input(
+                    "garage",
+                    "อู่ที่ให้บริการ",
+                    plan.garage || "ศูนย์บริการมาตรฐานประจำสาขา",
+                    "text",
+                    "",
+                  ) +
+                  input(
+                    "serviceStart",
+                    "วันที่เข้ารับบริการ",
+                    when(plan.start).slice(0, 10),
+                    "date",
+                    "",
+                  ) +
+                  input(
+                    "serviceEnd",
+                    "วันที่แล้วเสร็จ",
+                    when(plan.end).slice(0, 10),
+                    "date",
+                    "",
+                  ) +
+                  input("cost", "ค่าใช้จ่าย (บาท)", 0, "number") +
+                  input("odometer", "เลขไมล์", car.odometer, "number") +
+                  select(
+                    "status",
+                    "สถานะหลังบำรุงรักษา",
+                    statuses.filter(([key]) => key !== "rented"),
+                    "available",
+                  ),
+              ) +
+              actions(
+                submit("บันทึกผล") + go("กลับไปบำรุงรักษา", "maintenance"),
+              ),
+          ),
+        )}</div>`
+      );
+    }
+    const maintTypes = [
+      ["เช็กระยะตามคู่มือ", "เช็กระยะตามคู่มือ"],
+      ["เปลี่ยนน้ำมันเครื่อง + ไส้กรอง", "เปลี่ยนน้ำมันเครื่อง + ไส้กรอง"],
+      ["เปลี่ยนยาง / ตั้งศูนย์ถ่วงล้อ", "เปลี่ยนยาง / ตั้งศูนย์ถ่วงล้อ"],
+      ["ตรวจแบตเตอรี่และระบบไฟฟ้า (EV)", "ตรวจแบตเตอรี่และระบบไฟฟ้า (EV)"],
+      ["ต่อภาษี / พ.ร.บ. / ประกันภัย", "ต่อภาษี / พ.ร.บ. / ประกันภัย"],
+    ];
+    return (
+      title(
+        "สร้างแผนบำรุงรักษา",
+        "ระบบกันรถออกจากผลค้นหาในช่วงที่วางแผนไว้โดยอัตโนมัติ (DFD 5.3.1)",
+        "05 / MAINTENANCE",
+      ) +
+      `<div class="stack">${section(
+        "รายละเอียดแผน",
+        state.cars.length
+          ? form(
+              "plan",
+              fields(
+                select(
+                  "carId",
+                  "ทะเบียนรถ",
+                  state.cars.map((car) => [
+                    car.id,
+                    car.plate + " · " + car.model,
+                  ]),
+                ) +
+                  select(
+                    "maintType",
+                    "ประเภทการบำรุงรักษา",
+                    maintTypes,
+                    maintTypes[0][0],
+                  ) +
+                  input("task", "งานบำรุงรักษา") +
+                  input(
+                    "garage",
+                    "อู่ที่กำหนด",
+                    "ศูนย์บริการมาตรฐานประจำสาขา",
+                    "text",
+                    "",
+                  ) +
+                  input("start", "วันเริ่มต้น", "", "datetime-local") +
+                  input("end", "วันสิ้นสุด", "", "datetime-local") +
+                  select(
+                    "trigger",
+                    "เงื่อนไข",
+                    [
+                      ["date", "ตามวัน"],
+                      ["km", "ตามเลขไมล์"],
+                    ],
+                    "date",
+                  ) +
+                  input(
+                    "targetKm",
+                    "เลขไมล์เป้าหมาย (เมื่อเลือกตามเลขไมล์)",
+                    "",
+                    "number",
+                    'min="0"',
+                  ) +
+                  input(
+                    "frequency",
+                    "รอบความถี่",
+                    "ทุก 10,000 กม. / 6 เดือน",
+                    "text",
+                    "",
+                  ) +
+                  input(
+                    "advanceNotice",
+                    "การแจ้งเตือนล่วงหน้า",
+                    "1,000 กม. / 14 วัน",
+                    "text",
+                    "",
+                  ),
+              ) +
+                actions(
+                  submit("บันทึกแผน") + go("กลับไปบำรุงรักษา", "maintenance"),
+                ),
+            )
+          : empty("เพิ่มรถก่อนสร้างแผน"),
+      )}</div>`
+    );
+  }
+
+  function staffFields(employee) {
+    const role = employee?.role ?? "staff";
+    return (
+      accountFields(employee) +
+      fields(
+        select(
+          "role",
+          "บทบาท",
+          [
+            ["staff", roleLabels.staff],
+            ["admin", roleLabels.admin],
+          ],
+          role,
+        ) +
+          `<div class="staff-branch" ${role === "admin" ? "hidden" : ""}>${select("branch", "สาขาประจำ", branches, employee?.branch || "BKK")}</div>`,
+      )
+    );
+  }
+
+  function accounts(ctx) {
+    const { state, staffFilter } = ctx;
+    const query = staffFilter.query.toLowerCase();
+    const employees = state.users.filter(
+      (user) =>
+        user.role !== "customer" &&
+        (staffFilter.branch === "all" ||
+          (user.branch || "global") === staffFilter.branch) &&
+        [user.name, user.username, user.email].some((value) =>
+          value.toLowerCase().includes(query),
+        ),
+    );
+    return (
+      title(
+        "บัญชีพนักงาน",
+        "จัดการข้อมูลบัญชี บทบาท และสาขาที่รับผิดชอบ (DFD 1.3)",
+        "01 / ACCESS",
+      ) +
+      `<div class="stack">${section(
+        "บัญชีที่มีอยู่",
+        form(
+          "staffFilter",
+          fields(
+            input(
+              "query",
+              "ค้นหาชื่อ Username หรืออีเมล",
+              staffFilter.query,
+              "search",
+              "",
+            ) +
+              select(
+                "branch",
+                "กรองสาขาประจำ",
+                [
+                  ["all", "แสดงทั้งหมด"],
+                  ["global", "ผู้ดูแลทุกสาขา"],
+                  ...branches,
+                ],
+                staffFilter.branch,
+              ),
+          ) + actions(submit("ค้นหาบัญชี")),
+        ) +
+          (employees.length
+            ? table(
+                ["Username", "พนักงาน", "บทบาท", "สาขา", "จัดการ"],
+                employees.map((user) => [
+                  `<strong class="code">${safe(user.username)}</strong>`,
+                  safe(user.name),
+                  roleLabels[user.role],
+                  safe(user.branch ? branchName(user.branch) : "ทุกสาขา"),
+                  go("แก้ไข " + user.username, "staffEdit", user.username),
+                ]),
+              )
+            : empty("ไม่พบบัญชีตามเงื่อนไข")),
+      )}
+        ${section("สร้างบัญชีพนักงาน", form("staff", staffFields() + actions(submit("สร้างบัญชีพนักงาน"))))}</div>`
+    );
+  }
+
+  function editStaff(ctx) {
+    const { state, selected, username } = ctx;
+    const employee = state.users.find(
+      (user) => user.role !== "customer" && user.username === selected,
+    );
+    if (!employee) throw new Error("ไม่พบบัญชีพนักงาน");
+    return (
+      title(
+        "แก้ไขบัญชีพนักงาน",
+        employee.name + " · " + employee.username,
+        "01 / ACCESS",
+      ) +
+      `<div class="stack">${section(
+        "ข้อมูลบัญชี",
+        form(
+          "staff",
+          hidden("existing", employee.username) +
+            staffFields(employee) +
+            actions(
+              submit("บันทึกบัญชี") + go("กลับไปบัญชีพนักงาน", "accounts"),
+            ),
+        ) +
+          (employee.username === username
+            ? ""
+            : form(
+                "removeStaff",
+                hidden("existing", employee.username) +
+                  actions(submit("ลบบัญชีนี้", "", "danger")),
+              )),
+      )}</div>`
+    );
+  }
+
+  function reports(ctx) {
+    const { state, report } = ctx;
+    const selection = report || {
+      kind: "revenue",
+      branch: "all",
+      from: "2026-11-01",
+      to: "2026-11-30",
+    };
+    const start = model.time(selection.from + "T00:00");
+    const end = model.time(selection.to + "T00:00") + model.day;
+    const reportTypes = [
+      ["revenue", "รายงานรายได้"],
+      ["utilization", "รายงานการใช้งานรถ"],
+      ["efficiency", "รายงานประสิทธิภาพ"],
+    ];
+    const inRange = (value) => value >= start && value < end;
+    const sums = Object.keys(invoiceLabels);
+    let grandRevenue = 0;
+    const data = branches
+      .filter(
+        ([code]) => selection.branch === "all" || selection.branch === code,
+      )
+      .map(([code, label]) => {
+        const payments = state.invoices.filter(
+          (item) =>
+            item.branch === code &&
+            item.status === "paid" &&
+            inRange(item.paidAt),
+        );
+        const totals = sums.map((kind) =>
+          payments
+            .filter((item) => item.kind === kind)
+            .reduce((total, item) => total + item.amount, 0),
+        );
+        const branchSum = totals.reduce((a, b) => a + b, 0);
+        grandRevenue += branchSum;
+        const requests = state.bookings.filter(
+          (item) => item.pick === code && inRange(item.createdAt),
+        );
+        const returns = state.bookings.filter(
+          (item) => item.drop === code && inRange(item.returned?.recordedAt),
+        );
+        const rentals = state.bookings.filter(
+          (item) =>
+            item.pick === code &&
+            item.pickup &&
+            item.pickup.recordedAt < end &&
+            (item.returned?.recordedAt ?? model.now(state)) > start,
+        );
+        const cars = new Set([
+          ...state.cars
+            .filter((car) => car.branch === code)
+            .map((car) => car.id),
+          ...rentals.map((item) => item.carId),
+        ]);
+        const hours = rentals.reduce(
+          (total, item) =>
+            total +
+            Math.max(
+              0,
+              Math.min(end, item.returned?.recordedAt ?? model.now(state)) -
+                Math.max(start, item.pickup.recordedAt),
+            ) /
+              model.hour,
+          0,
+        );
+        if (selection.kind === "revenue") {
+          return [
+            safe(label),
+            ...totals.map(baht),
+            `<strong>${baht(branchSum)}</strong>`,
+          ];
+        }
+        if (selection.kind === "utilization") {
+          const pct = cars.size
+            ? (
+                (100 * hours) /
+                ((cars.size * (end - start)) / model.hour)
+              ).toFixed(1)
+            : null;
+          return [
+            safe(label),
+            cars.size,
+            hours.toFixed(1),
+            pct ? `${pct}%` : "—",
+          ];
+        }
+        return [
+          safe(label),
+          requests.length,
+          requests.filter((item) => item.approvedAt).length,
+          requests.filter((item) => item.status === "rejected").length,
+          requests.filter((item) => item.status === "cancelled").length,
+          returns.length,
+          returns.filter((item) => item.returned.charges.lateHours > 0).length,
+          state.maintenance.filter(
+            (item) => item.branch === code && inRange(item.result?.at),
+          ).length,
+        ];
+      });
+
+    const labels = {
+      revenue: [
+        "สาขา",
+        "มัดจำ",
+        "ค่าเช่าที่เหลือ",
+        "ค่าบริการเพิ่มเติม",
+        "ยอดรับจริง",
+      ],
+      utilization: ["สาขา", "รถในฐานคำนวณ", "ชั่วโมงใช้งาน", "Utilization"],
+      efficiency: [
+        "สาขา",
+        "คำขอ",
+        "เคยอนุมัติ",
+        "ปฏิเสธ",
+        "ยกเลิก",
+        "รับคืน",
+        "คืนช้า",
+        "บำรุงเสร็จ",
+      ],
+    };
+    const descriptions = {
+      revenue:
+        "นับใบแจ้งหนี้ที่ชำระสำเร็จตามวันเวลาชำระ มัดจำและค่าเช่าลงสาขารับรถ ค่าบริการเพิ่มเติมลงสาขาคืนรถ (DFD 6.1)",
+      utilization:
+        "ชั่วโมงใช้งานจริงในช่วงที่เลือก ÷ ชั่วโมงในช่วง × จำนวนรถในฐานคำนวณ โดยใช้รถประจำสาขาปัจจุบันและรถที่เช่าจากสาขาในช่วงนั้น (DFD 6.2)",
+      efficiency:
+        "นับคำขอตามวันสร้างรายการ รับคืนตามวันรับจริง และงานบำรุงตามวันที่บันทึกผล (DFD 6.3)",
+    };
+    const summaryBanner =
+      selection.kind === "revenue"
+        ? kpiStrip([
+            {
+              label: "รายได้รวมที่ชำระแล้วในช่วงเวลาที่เลือก",
+              value: baht(grandRevenue),
+              dark: true,
+            },
+          ])
+        : "";
+    return (
+      title(
+        "รายงาน",
+        "เลือกสาขา ช่วงเวลา และประเภทรายงาน (DFD 6.1–6.3)",
+        "06 / ANALYTICS",
+      ) +
+      `<div class="stack">${summaryBanner}${section(
+        "ตัวกรองรายงาน",
+        form(
+          "reports",
+          fields(
+            select("kind", "ประเภทรายงาน", reportTypes, selection.kind) +
+              select(
+                "branch",
+                "สาขา",
+                [["all", "ทุกสาขา"], ...branches],
+                selection.branch,
+              ) +
+              input("from", "จากวันที่", selection.from, "date") +
+              input("to", "ถึงวันที่", selection.to, "date"),
+          ) + actions(submit("แสดงรายงาน")),
+        ) +
+          `<p class="muted">${descriptions[selection.kind]}</p>` +
+          table(labels[selection.kind], data),
+      )}</div>`
+    );
+  }
+
+  const registry = {
+    home,
+    login,
+    register: registration,
+    search: searchScreen,
+    request: requestScreen,
+    bookings: (ctx) => customerBookings(ctx, false),
+    history: (ctx) => customerBookings(ctx, true),
+    queue,
+    booking: bookingScreen,
+    invoice: invoiceScreen,
+    change: (ctx) => manageBooking(ctx, false),
+    cancel: (ctx) => manageBooking(ctx, true),
+    outbox,
+    fleet,
+    vehicle: vehicleEditor,
+    pricing,
+    maintenance,
+    plan: (ctx) => maintenanceEditor(ctx, false),
+    result: (ctx) => maintenanceEditor(ctx, true),
+    accounts,
+    staffEdit: editStaff,
+    reports,
+  };
+
+  return {
+    registry,
+    findBookingForView,
+    chargeDetails,
+  };
+})(
+  typeof ChaosRoad !== "undefined" ? ChaosRoad : require("./model.js"),
+  typeof ChaosRoadUI !== "undefined" ? ChaosRoadUI : require("./ui.js"),
+);
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = ChaosRoadScreens;
+}
